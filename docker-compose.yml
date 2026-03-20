@@ -1,0 +1,34 @@
+services:
+  lyra.web:
+    image: ${DOCKER_REGISTRY-}lyra
+    build:
+      context: .
+      dockerfile: Lyra.Web/Dockerfile
+    ports:
+      - "7001:8080"
+    environment: 
+      ASPNETCORE_HTTP_PORTS: 8080
+    depends_on:
+      - db
+    volumes:
+      - ./app_data:/var/lib/lyra
+  db:
+     image: postgres:16-alpine
+     environment:
+       POSTGRES_DB: lyra
+       POSTGRES_USER: lyra
+       POSTGRES_PASSWORD: "secret"
+     volumes:
+       - ./db_data:/var/lib/postgresql/data
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "email@example.com"
+      PGADMIN_DEFAULT_PASSWORD: "secret"
+    ports:
+      - "7002:80"
+    depends_on:
+      - db
+    volumes:
+      - ./pgadmin_data:/var/lib/pgadmin
+    
