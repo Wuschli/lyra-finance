@@ -1,8 +1,8 @@
 ﻿using Dapper;
 
-namespace Lyra.Core;
+namespace Lyra.Core.Services;
 
-public class UserService : IUserService
+public class UserService
 {
     private readonly IDbConnectionFactory _dbFactory;
 

@@ -1,4 +1,5 @@
 using Lyra.Core;
+using Lyra.Core.Services;
 using Lyra.Web.Components;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -45,7 +46,9 @@ public class Program
         builder.Services.AddAuthorization()
             .AddCascadingAuthenticationState();
 
-        builder.Services.AddScoped<IUserService, UserService>();
+        builder.Services
+            .AddScoped<UserService>()
+            .AddScoped<AccountService>();
         builder.Services.AddTransient<IClaimsTransformation, UserClaimsTransformation>();
 
         builder.Services.AddRazorComponents()

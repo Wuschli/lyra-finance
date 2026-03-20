@@ -1,12 +1,32 @@
 ﻿@page "/"
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Home</PageTitle>
 
 <AuthorizeView>
     <Authorized>
-        <p>Welcome back!</p>
+        <Dashboard/>
     </Authorized>
     <NotAuthorized>
         <p>Welcome to Lyra</p>
     </NotAuthorized>
 </AuthorizeView>
+
+@code
+{
+    private string? _username;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is { IsAuthenticated: true })
+        {
+            _username = user.FindFirst("name")?.Value
+                        ?? user.FindFirst("preferred_username")?.Value
+                        ?? user.Identity.Name;
+        }
+    }
+
+}
