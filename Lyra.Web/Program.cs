@@ -1,3 +1,4 @@
+using DbUp;
 using Lyra.Core;
 using Lyra.Core.Services;
 using Lyra.Web.Components;
@@ -13,6 +14,9 @@ public class Program
     public static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        if (!DoMigration(builder))
+            return;
+
         builder.Services.AddDataProtection()
             .PersistKeysToFileSystem(new DirectoryInfo("/var/lib/lyra/keys"))
             .SetApplicationName("Lyra");
@@ -56,6 +60,7 @@ public class Program
 
         builder.Services.AddControllers();
 
+
         var app = builder.Build();
 
         // Configure Dapper
@@ -79,5 +84,28 @@ public class Program
             .AddInteractiveServerRenderMode();
 
         app.Run();
+    }
+
+    private static bool DoMigration(WebApplicationBuilder builder)
+    {
+        var connectionString = builder.Configuration.GetConnectionString("postgres");
+
+        // Sicherstellen, dass die DB existiert
+        EnsureDatabase.For.PostgresqlDatabase(connectionString);
+
+        var upgrader = DeployChanges.To
+            .PostgresqlDatabase(connectionString)
+            .WithScriptsEmbeddedInAssembly(typeof(IDbConnectionFactory).Assembly)
+            .LogToConsole()
+            .Build();
+
+        var result = upgrader.PerformUpgrade();
+
+        if (!result.Successful)
+        {
+            // Log error and stop app if migration fails
+            Console.WriteLine(result.Error);
+        }
+        return result.Successful;
     }
 }
