@@ -6,6 +6,9 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Kiota.Abstractions;
+using Microsoft.Kiota.Abstractions.Authentication;
+using Microsoft.Kiota.Http.HttpClientLibrary;
 
 namespace Lyra.Web;
 
@@ -52,8 +55,28 @@ public class Program
 
         builder.Services
             .AddScoped<UserService>()
-            .AddScoped<AccountService>();
+            .AddScoped<AccountService>()
+            .AddScoped<EnableBankingService>()
+            .AddScoped<EnableBankingAccessTokenProvider>();
+
         builder.Services.AddTransient<IClaimsTransformation, UserClaimsTransformation>();
+
+        builder.Services.AddScoped(sp =>
+        {
+            var tokenProvider = sp.GetRequiredService<EnableBankingAccessTokenProvider>();
+            var authProvider = new BaseBearerTokenAuthenticationProvider(tokenProvider);
+            var adapter = new HttpClientRequestAdapter(authProvider);
+            return new Core.EnableBanking.ApiClient(adapter);
+        });
+
+
+        //builder.Services.AddHttpClient<IRequestAdapter, HttpClientRequestAdapter>();
+
+        //builder.Services.AddHttpClient<IHttpClientRequestAdapter>(client =>
+        //{
+        //    client.BaseAddress = new Uri("https://api.enablebanking.com");
+        //    // If using certificate auth, you'd configure the HttpClientHandler here
+        //});
 
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
@@ -106,6 +129,7 @@ public class Program
             // Log error and stop app if migration fails
             Console.WriteLine(result.Error);
         }
+
         return result.Successful;
     }
 }

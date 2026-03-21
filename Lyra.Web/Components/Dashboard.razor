@@ -2,10 +2,14 @@
 @using Lyra.Core.Models
 @using Lyra.Core.Services
 @inject AccountService AccountService
+@inject NavigationManager NavManager
+@inject EnableBankingService EnableBankingService
 @attribute [Authorize]
 
 <div class="container mt-4">
     <h3>Financial Overview</h3>
+
+    <button @onclick="SyncTest">Sync Test</button>
 
     <div class="card mb-4 shadow-sm">
         <div class="card-body">
@@ -86,6 +90,13 @@
         {
             await CreateAccount();
         }
+    }
+
+    private async Task SyncTest()
+    {
+        var result = await EnableBankingService.CreateSessionAsync();
+        if (result?.Url != null)
+            NavManager.NavigateTo(result.Url, true);
     }
 
 }
