@@ -9,16 +9,9 @@ public class ExternalConnection
     public string ProviderName { get; set; } = string.Empty;
 
     // The session or consent ID returned by the provider
-    public string ExternalSessionId { get; set; } = string.Empty;
-
-    // OAuth2 or API specific tokens
-    public string? AccessToken { get; set; }
-    public string? RefreshToken { get; set; }
+    public string SessionId { get; set; } = string.Empty;
 
     // Timestamp when the current access token or consent expires
     public DateTimeOffset? ExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
-
-    // Track the last time a successful synchronization occurred for this connection
-    public DateTimeOffset? LastSyncAt { get; set; }
 }

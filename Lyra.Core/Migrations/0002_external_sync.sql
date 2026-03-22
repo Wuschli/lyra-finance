@@ -1,5 +1,4 @@
-﻿-- 1. The main connection (one per bank access / consent)
-CREATE TABLE IF NOT EXISTS lyra.external_connections (
+﻿CREATE TABLE IF NOT EXISTS lyra.external_connections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     provider_name TEXT NOT NULL, -- 'enable_banking', etc.
@@ -10,7 +9,6 @@ CREATE TABLE IF NOT EXISTS lyra.external_connections (
     CONSTRAINT fk_user FOREIGN KEY(user_id) REFERENCES lyra.users(id) ON DELETE CASCADE
 );
 
--- 2. Junction table: Maps one external account to one Lyra account
 CREATE TABLE IF NOT EXISTS lyra.external_connection_account (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     connection_id UUID NOT NULL,
@@ -21,7 +19,6 @@ CREATE TABLE IF NOT EXISTS lyra.external_connection_account (
     CONSTRAINT fk_account FOREIGN KEY(account_id) REFERENCES lyra.accounts(id) ON DELETE CASCADE
 );
 
--- 3. Sync logs tied to the connection
 CREATE TABLE IF NOT EXISTS lyra.sync_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     connection_id UUID NOT NULL,
@@ -32,3 +29,24 @@ CREATE TABLE IF NOT EXISTS lyra.sync_logs (
     
     CONSTRAINT fk_connection_log FOREIGN KEY(connection_id) REFERENCES lyra.external_connections(id) ON DELETE CASCADE
 );
+
+CREATE TABLE lyra.enable_banking_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    external_connection_id UUID NOT NULL REFERENCES external_connections(id) ON DELETE CASCADE,
+    
+    identification_hash TEXT NOT NULL,
+    
+    -- Account Details
+    name TEXT,
+    details TEXT,
+    iban TEXT,
+    currency VARCHAR(3) NOT NULL,
+    account_type TEXT,
+    product_name TEXT,
+
+    -- Unique Constraint for Upsert
+    CONSTRAINT uq_account_hash_per_connection UNIQUE (identification_hash, external_connection_id)
+);
+
+CREATE INDEX idx_eba_connection_id ON enable_banking_accounts(external_connection_id);
+CREATE INDEX idx_eba_identification_hash ON enable_banking_accounts(identification_hash);

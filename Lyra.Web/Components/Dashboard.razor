@@ -10,6 +10,7 @@
 <div class="container mt-4">
     <h3>Financial Overview</h3>
 
+    <button @onclick="ExternalConnectionTest">External Connection Test</button>
     <button @onclick="SyncTest">Sync Test</button>
 
     <div class="card mb-4 shadow-sm">
@@ -93,12 +94,17 @@
         }
     }
 
-    private async Task SyncTest()
+    private async Task ExternalConnectionTest()
     {
 
         var result = await EnableBankingService.StartAuthorizationAsync(Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf"), await UserService.GetCurrentUserId());
         if (result?.Url != null)
             NavManager.NavigateTo(result.Url, true);
+    }
+
+    private async Task SyncTest()
+    {
+        await EnableBankingService.SyncExternalConnection(Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf"));
     }
 
 }
