@@ -1,14 +1,17 @@
 ﻿using Dapper;
+using Microsoft.AspNetCore.Components.Authorization;
 
 namespace Lyra.Core.Services;
 
 public class UserService
 {
     private readonly IDbConnectionFactory _dbFactory;
+    private readonly AuthenticationStateProvider _authStateProvider;
 
-    public UserService(IDbConnectionFactory dbFactory)
+    public UserService(IDbConnectionFactory dbFactory, AuthenticationStateProvider authStateProvider)
     {
         _dbFactory = dbFactory;
+        _authStateProvider = authStateProvider;
     }
 
     public async Task<Guid> EnsureUserExists(string zitadelId)
@@ -24,5 +27,11 @@ public class UserService
 
         var userId = await db.ExecuteScalarAsync<Guid>(sql, new { zitadelId });
         return userId;
+    }
+
+    public async Task<Guid> GetCurrentUserId()
+    {
+        var state = await _authStateProvider.GetAuthenticationStateAsync();
+        return state.User.GetUserId()!.Value;
     }
 }

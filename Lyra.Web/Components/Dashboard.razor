@@ -4,6 +4,7 @@
 @inject AccountService AccountService
 @inject NavigationManager NavManager
 @inject EnableBankingService EnableBankingService
+@inject UserService UserService
 @attribute [Authorize]
 
 <div class="container mt-4">
@@ -94,7 +95,8 @@
 
     private async Task SyncTest()
     {
-        var result = await EnableBankingService.CreateSessionAsync();
+
+        var result = await EnableBankingService.StartAuthorizationAsync(Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf"), await UserService.GetCurrentUserId());
         if (result?.Url != null)
             NavManager.NavigateTo(result.Url, true);
     }

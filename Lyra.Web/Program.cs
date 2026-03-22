@@ -57,7 +57,7 @@ public class Program
             .AddScoped<UserService>()
             .AddScoped<AccountService>()
             .AddScoped<EnableBankingService>()
-            .AddScoped<EnableBankingAccessTokenProvider>();
+            .AddSingleton<EnableBankingAccessTokenProvider>();
 
         builder.Services.AddTransient<IClaimsTransformation, UserClaimsTransformation>();
 

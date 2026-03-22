@@ -3,12 +3,9 @@ CREATE TABLE IF NOT EXISTS lyra.external_connections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     provider_name TEXT NOT NULL, -- 'enable_banking', etc.
-    external_session_id TEXT NOT NULL,
-    access_token TEXT,
-    refresh_token TEXT,
+    session_id TEXT,
     expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    last_sync_at TIMESTAMP WITH TIME ZONE,
     
     CONSTRAINT fk_user FOREIGN KEY(user_id) REFERENCES lyra.users(id) ON DELETE CASCADE
 );
