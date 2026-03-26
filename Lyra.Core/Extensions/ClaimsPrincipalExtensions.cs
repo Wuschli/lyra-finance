@@ -1,6 +1,6 @@
 ﻿using System.Security.Claims;
 
-namespace Lyra.Core;
+namespace Lyra.Core.Extensions;
 
 public static class ClaimsPrincipalExtensions
 {

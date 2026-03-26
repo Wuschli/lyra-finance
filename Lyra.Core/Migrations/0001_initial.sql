@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS lyra.transactions (
     booking_date TIMESTAMP WITH TIME ZONE,
     value_date TIMESTAMP WITH TIME ZONE,
     category TEXT,
+    external_identifier VARCHAR(128),
     
     -- Constraint: Transactions must belong to an account
     CONSTRAINT fk_account 
@@ -54,3 +55,5 @@ CREATE TABLE IF NOT EXISTS lyra.transactions (
 -- Performance: Most queries will filter by account_id and sort by date
 CREATE INDEX IF NOT EXISTS idx_transactions_account_id ON lyra.transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON lyra.transactions(transaction_date DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_transactions_account_external_identifier
+    ON lyra.transactions(account_id, external_identifier);

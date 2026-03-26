@@ -1,7 +1,10 @@
-﻿using Dapper;
+﻿using System.Text;
+using Dapper;
 using Lyra.Core.EnableBanking.Models;
 using Lyra.Core.EnableBanking;
 using Lyra.Core.Models;
+using System.Text.Json;
+using Lyra.Core.Extensions;
 
 namespace Lyra.Core.Services;
 
@@ -123,30 +126,189 @@ public class EnableBankingService
     public async Task SyncExternalConnection(Guid externalConnectionId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
+        var logBuilder = new System.Text.StringBuilder();
+        var status = SyncStatus.InProgress;
 
-        const string getExternalConnectionSql = @"
+        try
+        {
+            const string getExternalConnectionSql = @"
         SELECT *
         FROM external_connections
         WHERE id = @Id";
-        var externalConnection = await connection.QueryFirstAsync<ExternalConnection>(getExternalConnectionSql, new
-        {
-            Id = externalConnectionId
-        });
+            var externalConnection = await connection.QueryFirstAsync<ExternalConnection>(getExternalConnectionSql, new { Id = externalConnectionId });
 
-        if (externalConnection.ExpiresAt <= DateTimeOffset.Now)
-        {
-            await StartAuthorizationAsync(externalConnectionId, await _userService.GetCurrentUserId());
-            externalConnection = await connection.QueryFirstAsync<ExternalConnection>(getExternalConnectionSql, new
+            if (externalConnection.ExpiresAt <= DateTimeOffset.Now)
             {
-                Id = externalConnectionId
-            });
+                await StartAuthorizationAsync(externalConnectionId, await _userService.GetCurrentUserId());
+                externalConnection = await connection.QueryFirstAsync<ExternalConnection>(getExternalConnectionSql, new { Id = externalConnectionId });
+            }
+
+            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+            var sessionDataResponse = await _client.Sessions[Guid.Parse(externalConnection.SessionId)].GetAsync();
+            logBuilder.AppendLine($"SessionDataResponse: {JsonSerializer.Serialize(sessionDataResponse, jsonOptions)}");
+
+            for (int i = 0; i < sessionDataResponse.AccountsData.Count; i++)
+            {
+                var externalAccountData = sessionDataResponse.AccountsData[i];
+                var externalAccountId = sessionDataResponse.Accounts[i];
+
+                // Get internal account_id and iban by using the connection table
+                const string getAccountIdAndIbanSql = @"
+                SELECT eca.account_id, eba.iban
+                FROM external_connection_account eca
+                JOIN enable_banking_accounts eba
+                        ON eba.external_connection_id = eca.connection_id
+                    AND eba.identification_hash = @IdentificationHash
+                    WHERE eca.connection_id = @ConnectionId
+                    AND eca.external_account_id = @ExternalAccountId";
+
+                var result = await connection.QueryFirstOrDefaultAsync<(Guid? AccountId, string Iban)>(
+                    getAccountIdAndIbanSql,
+                    new
+                    {
+                        ConnectionId = externalConnectionId,
+                        ExternalAccountId = externalAccountData.IdentificationHash,
+                        IdentificationHash = externalAccountData.IdentificationHash
+                    }
+                );
+
+                if (result.AccountId == null)
+                {
+                    logBuilder.AppendLine($"No internal account_id found for external_account_id {externalAccountData.IdentificationHash}");
+                    continue;
+                }
+
+                var accountId = result.AccountId.Value;
+                var iban = result.Iban ?? string.Empty;
+
+                var balance = await _client.Accounts[externalAccountId.Value].Balances.GetAsync();
+                logBuilder.AppendLine($"Account {accountId} Balance:\n{JsonSerializer.Serialize(balance, jsonOptions)}");
+
+                var transactions = await _client.Accounts[externalAccountId.Value].Transactions.GetAsync();
+                logBuilder.AppendLine($"Account {accountId} Transactions:\n{JsonSerializer.Serialize(transactions, jsonOptions)}");
+
+                await UpsertExternalTransactions(accountId, iban, transactions?.Transactions ?? Enumerable.Empty<EnableBanking.Models.Transaction>(), logBuilder);
+            }
+
+            status = SyncStatus.Success;
         }
-
-        var sessionDataResponse = await _client.Sessions[Guid.Parse(externalConnection.SessionId)].GetAsync();
-
-        foreach (var accountId in sessionDataResponse.Accounts)
+        catch (Exception ex)
         {
-            var balance = await _client.Accounts[accountId.Value].Balances.GetAsync();
+            status = SyncStatus.Failure;
+            logBuilder.AppendLine($"Exception: {ex}");
         }
+        finally
+        {
+            await LogSyncResult(connection, externalConnectionId, status, logBuilder.ToString());
+        }
+    }
+
+    private static string GenerateTransactionHash(EnableBanking.Models.Transaction transaction, Guid accountId)
+    {
+        // Combine immutable fields into a unique hash
+        var hashInput = string.Concat(
+            accountId,
+            transaction.BookingDate?.ToString() ?? string.Empty,
+            transaction.TransactionDate?.ToString() ?? string.Empty,
+            transaction.CreditDebitIndicator?.ToString() ?? string.Empty,
+            transaction.TransactionAmount?.Amount ?? string.Empty,
+            transaction.TransactionAmount?.Currency ?? string.Empty,
+            (transaction.Debtor?.Name ?? string.Empty).Trim(),
+            (transaction.Creditor?.Name ?? string.Empty).Trim(),
+            string.Join("|", transaction.RemittanceInformation ?? new List<string>())
+        );
+
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hashedBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(hashInput));
+        return Convert.ToHexString(hashedBytes);
+    }
+
+    private async Task UpsertExternalTransactions(Guid accountId,
+        string iban,
+        IEnumerable<EnableBanking.Models.Transaction> transactions,
+        StringBuilder logBuilder)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        var transactionList = transactions.ToList();
+        if (transactionList.Count == 0)
+        {
+            logBuilder.AppendLine($"Account {accountId}: No transactions to upsert.");
+            return;
+        }
+
+        const string sql = @"
+    INSERT INTO lyra.transactions
+        (account_id, counterparty_name, counterparty_iban, description, amount, transaction_date, booking_date, value_date, category, external_identifier)
+    VALUES
+        (@AccountId, @CounterpartyName, @CounterpartyIban, @Description, @Amount, @TransactionDate, @BookingDate, @ValueDate, @Category, @ExternalIdentifier)
+    ON CONFLICT (account_id, external_identifier)
+    DO UPDATE SET
+        counterparty_name = EXCLUDED.counterparty_name,
+        counterparty_iban = EXCLUDED.counterparty_iban,
+        description = EXCLUDED.description,
+        amount = EXCLUDED.amount,
+        transaction_date = EXCLUDED.transaction_date,
+        booking_date = EXCLUDED.booking_date,
+        value_date = EXCLUDED.value_date,
+        category = EXCLUDED.category;";
+
+        var parameters = transactionList.Select(transaction =>
+        {
+            var transactionDate = transaction.TransactionDate.ToDateTimeOrNull() ?? transaction.BookingDate.ToDateTimeOrNull() ?? DateTime.MinValue;
+
+            var counterpartyName = transaction.Creditor?.Name ?? transaction.CreditorAgent?.Name ?? string.Empty;
+            var counterpartyIban = transaction.CreditorAccount?.Iban ?? string.Empty;
+
+            if (!decimal.TryParse(transaction.TransactionAmount?.Amount ?? string.Empty, out var amount))
+            {
+                //TODO ERROR
+            }
+
+            if (counterpartyIban == iban)
+            {
+                counterpartyName = transaction.Debtor?.Name ?? transaction.DebtorAgent?.Name ?? string.Empty;
+                counterpartyIban = transaction.CreditorAccount?.Iban ?? string.Empty;
+            }
+            else
+            {
+                amount = -amount;
+            }
+
+            return new
+            {
+                AccountId = accountId,
+                CounterpartyName = counterpartyName,
+                CounterpartyIban = counterpartyIban,
+                Description = string.Join("; ", transaction.RemittanceInformation ?? new List<string>()),
+                Amount = amount,
+                TransactionDate = transactionDate,
+                BookingDate = transaction.BookingDate.ToDateTimeOrNull(),
+                ValueDate = transaction.ValueDate.ToDateTimeOrNull(),
+                Category = transaction.BankTransactionCode?.Code ?? string.Empty,
+                ExternalIdentifier = GenerateTransactionHash(transaction, accountId)
+            };
+        }).ToList();
+
+        await connection.ExecuteAsync(sql, parameters);
+        logBuilder.AppendLine($"Account {accountId}: Upserted {transactionList.Count} transactions.");
+    }
+
+    private async Task LogSyncResult(
+        System.Data.IDbConnection connection,
+        Guid connectionId,
+        SyncStatus status,
+        string message)
+    {
+        const string logSql = @"
+    INSERT INTO lyra.sync_logs (connection_id, status, message)
+    VALUES (@ConnectionId, @Status, @Message);";
+
+        await connection.ExecuteAsync(logSql, new
+        {
+            ConnectionId = connectionId,
+            Status = status.ToString(),
+            Message = message
+        });
     }
 }

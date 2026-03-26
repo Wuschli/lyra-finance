@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS lyra.sync_logs (
     CONSTRAINT fk_connection_log FOREIGN KEY(connection_id) REFERENCES lyra.external_connections(id) ON DELETE CASCADE
 );
 
-CREATE TABLE lyra.enable_banking_accounts (
+CREATE TABLE IF NOT EXISTS lyra.enable_banking_accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     external_connection_id UUID NOT NULL REFERENCES external_connections(id) ON DELETE CASCADE,
     
@@ -48,5 +48,5 @@ CREATE TABLE lyra.enable_banking_accounts (
     CONSTRAINT uq_account_hash_per_connection UNIQUE (identification_hash, external_connection_id)
 );
 
-CREATE INDEX idx_eba_connection_id ON enable_banking_accounts(external_connection_id);
-CREATE INDEX idx_eba_identification_hash ON enable_banking_accounts(identification_hash);
+CREATE INDEX IF NOT EXISTS idx_eba_connection_id ON enable_banking_accounts(external_connection_id);
+CREATE INDEX IF NOT EXISTS idx_eba_identification_hash ON enable_banking_accounts(identification_hash);
