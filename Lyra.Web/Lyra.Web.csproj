@@ -13,6 +13,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="8.0.25" />
     <PackageReference Include="Microsoft.AspNetCore.Authorization" Version="8.0.25" />
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.22.1" />
+    <PackageReference Include="MudBlazor" Version="9.2.0" />
   </ItemGroup>
 
   <ItemGroup>

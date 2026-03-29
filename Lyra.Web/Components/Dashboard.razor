@@ -1,87 +1,105 @@
 ﻿@using Lyra.Core
 @using Lyra.Core.Models
 @using Lyra.Core.Services
+@using MudBlazor
 @inject AccountService AccountService
 @inject NavigationManager NavManager
 @inject EnableBankingService EnableBankingService
 @inject UserService UserService
 @attribute [Authorize]
 
-<div class="container mt-4">
-    @if (_selectedAccount is not null)
+<MudText Typo="Typo.h4" Class="mb-1">Financial Overview</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">Manage your accounts and transactions</MudText>
+
+<MudGrid>
+    @if (_accounts != null && _accounts.Any())
     {
-        <AccountDetailView Account="_selectedAccount" OnBack="ClearSelection" />
-    }
-    else
-    {
-        <h3>Financial Overview</h3>
-
-        <button @onclick="ExternalConnectionTest">External Connection Test</button>
-        <button @onclick="SyncTest" disabled="@_isSyncing">
-            @if (_isSyncing)
-            {
-                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                <span>Syncing...</span>
-            }
-            else
-            {
-                <span>Sync Test</span>
-            }
-        </button>
-
-        <div class="card mb-4 shadow-sm">
-            <div class="card-body">
-                <h5 class="card-title">Create New Account</h5>
-                <div class="input-group">
-                    <input type="text" class="form-control"
-                           placeholder="Account Name (e.g. Sparkasse, Crypto Wallet)"
-                           @bind="_newAccountName"
-                           @onkeyup="HandleKeyUp"/>
-                    <button class="btn btn-primary" @onclick="CreateAccount" disabled="@string.IsNullOrWhiteSpace(_newAccountName)">
-                        Add Account
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <h5>Your Accounts</h5>
-        @if (_accounts == null)
+        @foreach (var account in _accounts)
         {
-            <div class="d-flex align-items-center">
-                <strong>Loading accounts...</strong>
-                <div class="spinner-border ms-auto" role="status" aria-hidden="true"></div>
-            </div>
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Elevation="2" Style="cursor: pointer;" @onclick='() => NavManager.NavigateTo($"/accounts/{account.Id}")'>
+                    <MudCardContent>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                            <MudAvatar Color="Color.Primary" Variant="Variant.Filled">
+                                <MudIcon Icon="@Icons.Material.Filled.AccountBalance"/>
+                            </MudAvatar>
+                            <div>
+                                <MudText Typo="Typo.h6">@account.Name</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Created @account.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")
+                                </MudText>
+                            </div>
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
         }
-        else if (!_accounts.Any())
+    }
+
+    <MudItem xs="12" sm="6" md="4">
+        <MudCard Elevation="1" Style="border: 2px dashed var(--mud-palette-divider);">
+            <MudCardContent>
+                <MudText Typo="Typo.subtitle1" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Add" Class="me-1"/>
+                    New Account
+                </MudText>
+                <MudTextField @bind-Value="_newAccountName"
+                              Label="Account Name"
+                              Placeholder="e.g. Sparkasse, Crypto Wallet"
+                              Variant="Variant.Outlined"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@Icons.Material.Filled.Add"
+                              OnAdornmentClick="CreateAccount"
+                              OnKeyUp="HandleKeyUp"
+                              Immediate="true"
+                              Class="mb-2"/>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           Disabled="@string.IsNullOrWhiteSpace(_newAccountName)"
+                           OnClick="CreateAccount">
+                    Add Account
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@if (_accounts == null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-6"/>
+    <MudText Typo="Typo.body2" Class="mt-2">Loading accounts...</MudText>
+}
+
+<MudDivider Class="my-6"/>
+
+<MudStack Row="true" Spacing="2">
+    <MudButton Variant="Variant.Outlined"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Link"
+               OnClick="ExternalConnectionTest">
+        Connect Bank
+    </MudButton>
+    <MudButton Variant="Variant.Outlined"
+               Color="Color.Secondary"
+               StartIcon="@Icons.Material.Filled.Sync"
+               Disabled="@_isSyncing"
+               OnClick="SyncTest">
+        @if (_isSyncing)
         {
-            <div class="alert alert-light border">
-                No accounts found. Create your first one above!
-            </div>
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2"/>
+            <span>Syncing...</span>
         }
         else
         {
-            <div class="list-group shadow-sm">
-                @foreach (var account in _accounts)
-                {
-                    <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
-                            @onclick="() => SelectAccount(account)">
-                        <div>
-                            <i class="bi bi-bank me-2"></i>
-                            <strong>@account.Name</strong>
-                        </div>
-                        <span class="text-muted small">
-                            Created: @account.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
-                        </span>
-                    </button>
-                }
-            </div>
+            <span>Sync</span>
         }
-    }
-</div>
+    </MudButton>
+</MudStack>
 
 @code {
     private IEnumerable<Account>? _accounts;
-    private Account? _selectedAccount;
     private string _newAccountName = string.Empty;
     private bool _isSyncing;
 
@@ -100,8 +118,6 @@
         if (string.IsNullOrWhiteSpace(_newAccountName)) return;
 
         await AccountService.CreateAccountForCurrentUserAsync(_newAccountName);
-
-        // Reset input and refresh list
         _newAccountName = string.Empty;
         await RefreshAccounts();
     }
@@ -109,24 +125,14 @@
     private async Task HandleKeyUp(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
-        {
             await CreateAccount();
-        }
-    }
-
-    private void SelectAccount(Account account)
-    {
-        _selectedAccount = account;
-    }
-
-    private void ClearSelection()
-    {
-        _selectedAccount = null;
     }
 
     private async Task ExternalConnectionTest()
     {
-        var result = await EnableBankingService.StartAuthorizationAsync(Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf"), await UserService.GetCurrentUserId());
+        var result = await EnableBankingService.StartAuthorizationAsync(
+            Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf"),
+            await UserService.GetCurrentUserId());
         if (result?.Url != null)
             NavManager.NavigateTo(result.Url, true);
     }

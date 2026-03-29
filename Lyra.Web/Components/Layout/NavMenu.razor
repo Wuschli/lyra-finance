@@ -1,0 +1,38 @@
+@using Lyra.Core.Models
+@using Lyra.Core.Services
+@using MudBlazor
+@inject AccountService AccountService
+
+<MudNavGroup Title="Accounts" Icon="@Icons.Material.Filled.AccountBalance" Expanded="true">
+    @if (_accounts == null)
+    {
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.HourglassEmpty">
+            Loading...
+        </MudNavLink>
+    }
+    else if (!_accounts.Any())
+    {
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Outlined.Info">
+            No accounts yet
+        </MudNavLink>
+    }
+    else
+    {
+        @foreach (var account in _accounts)
+        {
+            <MudNavLink Href="@($"/accounts/{account.Id}")"
+                        Icon="@Icons.Material.Filled.CreditCard">
+                @account.Name
+            </MudNavLink>
+        }
+    }
+</MudNavGroup>
+
+@code {
+    private IEnumerable<Account>? _accounts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _accounts = await AccountService.GetAccountsForCurrentUserAsync();
+    }
+}

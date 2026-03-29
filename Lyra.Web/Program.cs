@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.Kiota.Http.HttpClientLibrary;
+using MudBlazor.Services;
 
 namespace Lyra.Web;
 
@@ -23,6 +24,8 @@ public class Program
         builder.Services.AddDataProtection()
             .PersistKeysToFileSystem(new DirectoryInfo("/var/lib/lyra/keys"))
             .SetApplicationName("Lyra");
+
+        builder.Services.AddMudServices();
 
         // Add services to the container.
         builder.Services

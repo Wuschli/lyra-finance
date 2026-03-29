@@ -1,29 +1,72 @@
 ﻿@inherits LayoutComponentBase
+@using MudBlazor
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+<MudThemeProvider/>
+<MudPopoverProvider/>
+<MudDialogProvider/>
+<MudSnackbarProvider/>
 
-    <main>
-        <div class="top-row px-4">
-            <AuthorizeView>
-                <Authorized>
-                    <span class="me-3">Hello, @context.User.Identity?.Name</span>
-                    <a href="auth/logout" class="btn btn-outline-danger btn-sm">
-                        <i class="bi bi-box-arrow-right"></i> Logout
-                    </a>
-                </Authorized>
-                <NotAuthorized>
-                    <a href="auth/login" class="btn btn-primary btn-sm">
+<MudLayout>
+    <MudDrawer Open="true" Variant="DrawerVariant.Persistent" Elevation="1"
+               ClipMode="DrawerClipMode.Never" Width="260px">
+        <MudDrawerHeader Style="padding: 16px;">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" Size="Size.Large"/>
+                <MudText Typo="Typo.h6" Style="font-weight: 700;">Lyra</MudText>
+            </MudStack>
+        </MudDrawerHeader>
+
+        <MudNavMenu>
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
+                Dashboard
+            </MudNavLink>
+
+            <NavMenu/>
+        </MudNavMenu>
+
+        <MudSpacer/>
+
+        <AuthorizeView>
+            <Authorized>
+                <MudDivider/>
+                <div style="padding: 12px 16px;">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                        <MudAvatar Color="Color.Primary" Size="Size.Small">
+                            @context.User.Identity?.Name?[0]
+                        </MudAvatar>
+                        <MudText Typo="Typo.body2" Style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            @context.User.Identity?.Name
+                        </MudText>
+                    </MudStack>
+                    <MudButton Href="auth/logout"
+                               Variant="Variant.Outlined"
+                               Color="Color.Error"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Logout"
+                               FullWidth="true">
+                        Logout
+                    </MudButton>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <MudDivider/>
+                <div style="padding: 12px 16px;">
+                    <MudButton Href="auth/login"
+                               Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Login"
+                               FullWidth="true">
                         Login
-                    </a>
-                </NotAuthorized>
-            </AuthorizeView>
-        </div>
+                    </MudButton>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudDrawer>
 
-        <article class="content px-4">
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-6">
             @Body
-        </article>
-    </main>
-</div>
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>

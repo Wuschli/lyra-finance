@@ -32,12 +32,12 @@ public class EnableBankingService
         using var connection = await _connectionFactory.CreateConnectionAsync();
 
         const string sql = @"
-        INSERT INTO external_connections 
-            (id, user_id, provider_name, created_at)
-        VALUES 
-            (@Id, @UserId, 'enable_banking', @Now)
-        ON CONFLICT (id)
-        DO NOTHING;";
+            INSERT INTO external_connections 
+                (id, user_id, provider_name, created_at)
+            VALUES 
+                (@Id, @UserId, 'enable_banking', @Now)
+            ON CONFLICT (id)
+            DO NOTHING;";
 
         await connection.ExecuteAsync(sql, new
         {
@@ -78,10 +78,10 @@ public class EnableBankingService
         using var connection = await _connectionFactory.CreateConnectionAsync();
 
         const string sql = @"
-        UPDATE external_connections
-        SET session_id = @SessionId,
-            expires_at = @ValidUntil
-        WHERE id = @Id";
+            UPDATE external_connections
+            SET session_id = @SessionId,
+                expires_at = @ValidUntil
+            WHERE id = @Id";
 
         await connection.ExecuteAsync(sql, new
         {
@@ -97,17 +97,17 @@ public class EnableBankingService
         using var connection = await _connectionFactory.CreateConnectionAsync();
 
         const string sql = @"
-        INSERT INTO enable_banking_accounts
-            (external_connection_id, identification_hash, name, details, iban, currency, account_type, product_name)
-        VALUES
-            (@ConnectionId, @Hash, @Name, @Details, @Iban, @Currency, @AccountType, @ProductName)
-        ON CONFLICT (external_connection_id, identification_hash)
-        DO UPDATE SET
-            name = EXCLUDED.name,
-            details = EXCLUDED.details,
-            iban = EXCLUDED.iban,
-            account_type = EXCLUDED.account_type,
-            product_name = EXCLUDED.product_name;";
+            INSERT INTO enable_banking_accounts
+                (external_connection_id, identification_hash, name, details, iban, currency, account_type, product_name)
+            VALUES
+                (@ConnectionId, @Hash, @Name, @Details, @Iban, @Currency, @AccountType, @ProductName)
+            ON CONFLICT (external_connection_id, identification_hash)
+            DO UPDATE SET
+                name = EXCLUDED.name,
+                details = EXCLUDED.details,
+                iban = EXCLUDED.iban,
+                account_type = EXCLUDED.account_type,
+                product_name = EXCLUDED.product_name;";
 
         foreach (var account in accounts)
         {
@@ -134,9 +134,9 @@ public class EnableBankingService
         try
         {
             const string getExternalConnectionSql = @"
-        SELECT *
-        FROM external_connections
-        WHERE id = @Id";
+                SELECT *
+                FROM external_connections
+                WHERE id = @Id";
             var externalConnection = await connection.QueryFirstAsync<ExternalConnection>(getExternalConnectionSql, new { Id = externalConnectionId });
 
             if (externalConnection.ExpiresAt <= DateTimeOffset.Now)
@@ -156,13 +156,13 @@ public class EnableBankingService
 
                 // Get internal account_id and iban by using the connection table
                 const string getAccountIdAndIbanSql = @"
-                SELECT eca.account_id, eba.iban
-                FROM external_connection_account eca
-                JOIN enable_banking_accounts eba
-                        ON eba.external_connection_id = eca.connection_id
-                    AND eba.identification_hash = @IdentificationHash
-                    WHERE eca.connection_id = @ConnectionId
-                    AND eca.external_account_id = @ExternalAccountId";
+                    SELECT eca.account_id, eba.iban
+                    FROM external_connection_account eca
+                    JOIN enable_banking_accounts eba
+                            ON eba.external_connection_id = eca.connection_id
+                        AND eba.identification_hash = @IdentificationHash
+                        WHERE eca.connection_id = @ConnectionId
+                        AND eca.external_account_id = @ExternalAccountId";
 
                 var result = await connection.QueryFirstOrDefaultAsync<(Guid? AccountId, string Iban)>(
                     getAccountIdAndIbanSql,
@@ -240,20 +240,20 @@ public class EnableBankingService
         }
 
         const string sql = @"
-    INSERT INTO lyra.transactions
-        (account_id, counterparty_name, counterparty_iban, description, amount, transaction_date, booking_date, value_date, category, external_identifier)
-    VALUES
-        (@AccountId, @CounterpartyName, @CounterpartyIban, @Description, @Amount, @TransactionDate, @BookingDate, @ValueDate, @Category, @ExternalIdentifier)
-    ON CONFLICT (account_id, external_identifier)
-    DO UPDATE SET
-        counterparty_name = EXCLUDED.counterparty_name,
-        counterparty_iban = EXCLUDED.counterparty_iban,
-        description = EXCLUDED.description,
-        amount = EXCLUDED.amount,
-        transaction_date = EXCLUDED.transaction_date,
-        booking_date = EXCLUDED.booking_date,
-        value_date = EXCLUDED.value_date,
-        category = EXCLUDED.category;";
+            INSERT INTO lyra.transactions
+                (account_id, counterparty_name, counterparty_iban, description, amount, transaction_date, booking_date, value_date, category, external_identifier)
+            VALUES
+                (@AccountId, @CounterpartyName, @CounterpartyIban, @Description, @Amount, @TransactionDate, @BookingDate, @ValueDate, @Category, @ExternalIdentifier)
+            ON CONFLICT (account_id, external_identifier)
+            DO UPDATE SET
+                counterparty_name = EXCLUDED.counterparty_name,
+                counterparty_iban = EXCLUDED.counterparty_iban,
+                description = EXCLUDED.description,
+                amount = EXCLUDED.amount,
+                transaction_date = EXCLUDED.transaction_date,
+                booking_date = EXCLUDED.booking_date,
+                value_date = EXCLUDED.value_date,
+                category = EXCLUDED.category;";
 
         var parameters = transactionList.Select(transaction =>
         {
@@ -303,8 +303,8 @@ public class EnableBankingService
         string message)
     {
         const string logSql = @"
-    INSERT INTO lyra.sync_logs (connection_id, status, message)
-    VALUES (@ConnectionId, @Status, @Message);";
+            INSERT INTO lyra.sync_logs (connection_id, status, message)
+            VALUES (@ConnectionId, @Status, @Message);";
 
         await connection.ExecuteAsync(logSql, new
         {
