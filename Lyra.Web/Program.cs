@@ -1,3 +1,4 @@
+using ApexCharts;
 using DbUp;
 using Lyra.Core;
 using Lyra.Core.Auth;
@@ -26,6 +27,7 @@ public class Program
             .SetApplicationName("Lyra");
 
         builder.Services.AddMudServices();
+        builder.Services.AddApexCharts();
 
         // Add services to the container.
         builder.Services

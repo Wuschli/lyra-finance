@@ -1,21 +1,30 @@
-@using Lyra.Core
+ï»¿@using Lyra.Core
 @using Lyra.Core.EnableBanking.Models
 @using Lyra.Core.Models
 @using Lyra.Core.Services
 @using MudBlazor
+@using MudBlazor.Charts
 @using Transaction = Lyra.Core.Models.Transaction
 @inject TransactionRepository TransactionRepository
 @inject UserService UserService
 @inject EnableBankingService EnableBankingService
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
-<MudText Typo="Typo.h4" Class="mb-1">
-    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="me-2 mb-1"/>@Account.Name
-</MudText>
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-1">
+    <MudText Typo="Typo.h4">
+        <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="me-2 mb-1"/>@Account.Name
+    </MudText>
+    @if (_externalConnection != null)
+    {
+        <MudIconButton Icon="@Icons.Material.Filled.Settings" Title="Sync-Settings" OnClick="() => _syncSettingsExpanded = !_syncSettingsExpanded"/>
+    }
+</MudStack>
 
 @if (Account.CurrentBalance.HasValue)
 {
     <MudText Typo="Typo.body1" Color="@(Account.CurrentBalance >= 0 ? Color.Success : Color.Error)" Class="mb-1">
-        <strong>@Account.CurrentBalance.Value.ToString("N2") €</strong>
+        <strong>@Account.CurrentBalance.Value.ToString("N2") â‚¬</strong>
     </MudText>
     @if (Account.CurrentBalanceAt.HasValue)
     {
@@ -25,25 +34,15 @@
     }
 }
 
-<MudText Typo="Typo.body2" Color="Color.Default" Class="mb-4">Transactions for this account</MudText>
-
 @if (_externalConnection != null)
 {
-    <MudButton Variant="Variant.Text"
-               StartIcon="@Icons.Material.Filled.Sync"
-               EndIcon="@(_syncSettingsExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
-               OnClick="() => _syncSettingsExpanded = !_syncSettingsExpanded"
-               Class="mb-2">
-        Sync-Settings
-    </MudButton>
     <MudCollapse Expanded="_syncSettingsExpanded">
-        <MudPaper Class="pa-4 mb-6" Elevation="1">
+        <MudPaper Class="pa-4 mb-4" Elevation="1">
             <MudSelect T="string?"
-                       Label="Balance-Typ für Sync"
+                       Label="Balance-Typ fÃ¼r Sync"
                        Value="_selectedBalanceType"
                        ValueChanged="OnBalanceTypeChanged"
-                       Clearable="
-                    true"
+                       Clearable="true"
                        HelperText="Leer lassen um Saldo-Sync zu deaktivieren">
                 @foreach (var type in _balanceTypes)
                 {
@@ -59,59 +58,69 @@
     <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-4"/>
     <MudText Typo="Typo.body2" Class="mt-2">Loading transactions...</MudText>
 }
-else if (!_transactions.Any())
-{
-    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
-        No transactions found for this account.
-    </MudAlert>
-}
 else
 {
-    <MudTable Items="_transactions"
-              Hover="true"
-              Striped="true"
-              Dense="true"
-              Elevation="2"
-              Class="rounded">
-        <HeaderContent>
-            <MudTh Style="width: 110px;">Date</MudTh>
-            <MudTh>Counterparty</MudTh>
-            <MudTh>Description</MudTh>
-            <MudTh Style="width: 130px; text-align: right;">Amount</MudTh>
-            <MudTh Style="min-width: 200px;">Category</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Date">
-                <MudText Typo="Typo.body2" Color="Color.Default">
-                    @context.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
-                </MudText>
-            </MudTd>
-            <MudTd DataLabel="Counterparty">
-                <MudText Typo="Typo.body2" Color="Color.Default">
-                    <strong>@context.CounterpartyName</strong>
-                </MudText>
-                @if (!string.IsNullOrWhiteSpace(context.CounterpartyIban))
-                {
-                    <MudText Typo="Typo.caption" Color="Color.Default">@context.CounterpartyIban</MudText>
-                }
-            </MudTd>
-            <MudTd DataLabel="Description">
-                <MudText Typo="Typo.body2" Color="Color.Default">@context.Description</MudText>
-            </MudTd>
-            <MudTd DataLabel="Amount" Style="text-align: right;">
-                <MudText Typo="Typo.body2"
-                         Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
-                    <strong>@context.Amount.ToString("N2") €</strong>
-                </MudText>
-            </MudTd>
-            <MudTd DataLabel="Category">
-                <CategoryInput
-                    Value="@context.Category"
-                    Suggestions="_allCategories"
-                    OnCommit="@(cat => SetCategory(context, cat))"/>
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
+    @if (_balanceHistory.Count > 1)
+    {
+        <div style="height: 75px; width: 100%;" class="mb-2">
+            <canvas id="@_canvasId"></canvas>
+        </div>
+    }
+
+    @if (!_transactions.Any())
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
+            No transactions found for this account.
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable Items="_transactions"
+                  Hover="true"
+                  Striped="true"
+                  Dense="true"
+                  Elevation="2"
+                  Class="rounded">
+            <HeaderContent>
+                <MudTh Style="width: 110px;">Date</MudTh>
+                <MudTh>Counterparty</MudTh>
+                <MudTh>Description</MudTh>
+                <MudTh Style="width: 130px; text-align: right;">Amount</MudTh>
+                <MudTh Style="min-width: 200px;">Category</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Date">
+                    <MudText Typo="Typo.body2" Color="Color.Default">
+                        @context.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Counterparty">
+                    <MudText Typo="Typo.body2" Color="Color.Default">
+                        <strong>@context.CounterpartyName</strong>
+                    </MudText>
+                    @if (!string.IsNullOrWhiteSpace(context.CounterpartyIban))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Default">@context.CounterpartyIban</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Description">
+                    <MudText Typo="Typo.body2" Color="Color.Default">@context.Description</MudText>
+                </MudTd>
+                <MudTd DataLabel="Amount" Style="text-align: right;">
+                    <MudText Typo="Typo.body2"
+                             Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
+                        <strong>@context.Amount.ToString("N2") â‚¬</strong>
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Category">
+                    <CategoryInput
+                        Value="@context.Category"
+                        Suggestions="_allCategories"
+                        OnCommit="@(cat => SetCategory(context, cat))"/>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
 }
 
 @code {
@@ -123,17 +132,42 @@ else
     public EventCallback OnBack { get; set; }
 
     private List<Transaction>? _transactions;
-    private List<string> _allCategories = [];
+    private List<string> _allCategories = new();
 
     private ExternalConnection? _externalConnection;
     private string? _selectedBalanceType;
     private bool _syncSettingsExpanded;
 
+    private List<BalancePoint> _balanceHistory = new();
+
     private static readonly List<string> _balanceTypes = Enum.GetNames<BalanceStatus>().ToList();
+
+    private readonly string _canvasId = $"balance-chart-{Guid.NewGuid():N}";
+
+    private record BalancePoint(DateTimeOffset Date, decimal Balance);
 
     protected override async Task OnParametersSetAsync()
     {
         await LoadData();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_balanceHistory.Count > 1)
+            await RenderChart();
+    }
+
+    private async Task RenderChart()
+    {
+        var labels = _balanceHistory
+            .Select(p => p.Date.LocalDateTime.ToString("dd.MM."))
+            .ToArray();
+
+        var values = _balanceHistory
+            .Select(p => (double)p.Balance)
+            .ToArray();
+
+        await JS.InvokeVoidAsync("balanceChart.render", _canvasId, labels, values);
     }
 
     private async Task LoadData()
@@ -143,6 +177,45 @@ else
         _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
         _externalConnection = await EnableBankingService.GetExternalConnectionByAccountIdAsync(Account.Id);
         _selectedBalanceType = _externalConnection?.BalanceType;
+        _balanceHistory = BuildBalanceHistory(_transactions, Account.CurrentBalance, 30);
+    }
+
+    /// <summary>
+    /// Reconstructs the per-day closing balance for the last <paramref name="days"/> days
+    /// by walking backwards from the known current balance and subtracting transactions.
+    /// </summary>
+    private static List<BalancePoint> BuildBalanceHistory(
+        List<Transaction> transactions,
+        decimal? currentBalance,
+        int days)
+    {
+        if (currentBalance is null || transactions.Count == 0)
+            return new();
+
+        var today = DateTimeOffset.UtcNow.Date;
+        var startDate = today.AddDays(-(days - 1));
+
+    // Group net transaction amounts by local date
+        var dailyDeltas = transactions
+            .Where(t => t.TransactionDate.LocalDateTime.Date >= startDate)
+            .GroupBy(t => t.TransactionDate.LocalDateTime.Date)
+            .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
+
+    // Walk backwards from today: start with the current balance and undo each day's transactions
+        var points = new List<BalancePoint>(days);
+        var balance = currentBalance.Value;
+
+        for (var i = 0; i < days; i++)
+        {
+            var date = today.AddDays(-i);
+            points.Add(new BalancePoint(new DateTimeOffset(date, TimeSpan.Zero), balance));
+
+            if (dailyDeltas.TryGetValue(date, out var delta))
+                balance -= delta; // remove this day's transactions to get the balance before them
+        }
+
+        points.Reverse(); // oldest â†’ newest
+        return points;
     }
 
     private async Task OnBalanceTypeChanged(string? value)
@@ -163,6 +236,11 @@ else
     // Refresh suggestions if a new category was introduced
         var userId = await UserService.GetCurrentUserId();
         _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await JS.InvokeVoidAsync("balanceChart.destroy", _canvasId);
     }
 
 }
