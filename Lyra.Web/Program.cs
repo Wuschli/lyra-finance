@@ -57,7 +57,8 @@ public class Program
             .AddScoped<UserService>()
             .AddScoped<AccountService>()
             .AddScoped<EnableBankingService>()
-            .AddSingleton<EnableBankingAccessTokenProvider>();
+            .AddSingleton<EnableBankingAccessTokenProvider>()
+            .AddScoped<TransactionRepository>();
 
         builder.Services.AddTransient<IClaimsTransformation, UserClaimsTransformation>();
 
@@ -68,15 +69,6 @@ public class Program
             var adapter = new HttpClientRequestAdapter(authProvider);
             return new Core.EnableBanking.ApiClient(adapter);
         });
-
-
-        //builder.Services.AddHttpClient<IRequestAdapter, HttpClientRequestAdapter>();
-
-        //builder.Services.AddHttpClient<IHttpClientRequestAdapter>(client =>
-        //{
-        //    client.BaseAddress = new Uri("https://api.enablebanking.com");
-        //    // If using certificate auth, you'd configure the HttpClientHandler here
-        //});
 
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();

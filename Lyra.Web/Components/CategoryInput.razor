@@ -1,0 +1,63 @@
+@using System.Timers
+
+<div class="position-relative">
+    <input
+        type="text"
+        class="form-control form-control-sm"
+        list="@_listId"
+        value="@Value"
+        placeholder="Add category…"
+        @oninput="OnInput"
+        @onchange="OnChange"
+        @onkeydown="OnKeyDown" />
+    <datalist id="@_listId">
+        @foreach (var suggestion in Suggestions)
+        {
+            <option value="@suggestion" />
+        }
+    </datalist>
+</div>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public IReadOnlyList<string> Suggestions { get; set; } = [];
+    [Parameter] public EventCallback<string?> OnCommit { get; set; }
+
+    private readonly string _listId = $"cat-{Guid.NewGuid():N}";
+    private string? _pendingValue;
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        _pendingValue = e.Value?.ToString();
+    }
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        _pendingValue = null;
+        await CommitAsync(value);
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _pendingValue is not null)
+        {
+            var value = _pendingValue;
+            _pendingValue = null;
+            await CommitAsync(value);
+        }
+        else if (e.Key == "Escape")
+        {
+            _pendingValue = null;
+        }
+    }
+
+    private async Task CommitAsync(string? value)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        if (normalized != Value)
+        {
+            await OnCommit.InvokeAsync(normalized);
+        }
+    }
+}

@@ -1,10 +1,12 @@
-﻿using System.Text;
-using Dapper;
-using Lyra.Core.EnableBanking.Models;
-using Lyra.Core.EnableBanking;
-using Lyra.Core.Models;
+﻿using System.Data;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Dapper;
+using Lyra.Core.EnableBanking;
+using Lyra.Core.EnableBanking.Models;
 using Lyra.Core.Extensions;
+using Lyra.Core.Models;
 
 namespace Lyra.Core.Services;
 
@@ -126,7 +128,7 @@ public class EnableBankingService
     public async Task SyncExternalConnection(Guid externalConnectionId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
-        var logBuilder = new System.Text.StringBuilder();
+        var logBuilder = new StringBuilder();
         var status = SyncStatus.InProgress;
 
         try
@@ -168,7 +170,7 @@ public class EnableBankingService
                     {
                         ConnectionId = externalConnectionId,
                         ExternalAccountId = externalAccountData.IdentificationHash,
-                        IdentificationHash = externalAccountData.IdentificationHash
+                        externalAccountData.IdentificationHash
                     }
                 );
 
@@ -218,8 +220,8 @@ public class EnableBankingService
             string.Join("|", transaction.RemittanceInformation ?? new List<string>())
         );
 
-        using var sha256 = System.Security.Cryptography.SHA256.Create();
-        var hashedBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(hashInput));
+        using var sha256 = SHA256.Create();
+        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(hashInput));
         return Convert.ToHexString(hashedBytes);
     }
 
@@ -295,7 +297,7 @@ public class EnableBankingService
     }
 
     private async Task LogSyncResult(
-        System.Data.IDbConnection connection,
+        IDbConnection connection,
         Guid connectionId,
         SyncStatus status,
         string message)

@@ -19,8 +19,3 @@ public class NpgsqlConnectionFactory : IDbConnectionFactory
         return connection;
     }
 }
-
-public class Transaction
-{
-    public Guid Id { get; set; }
-}
