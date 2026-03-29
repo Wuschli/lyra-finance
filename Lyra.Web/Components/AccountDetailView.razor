@@ -1,83 +1,135 @@
 @using Lyra.Core
+@using Lyra.Core.EnableBanking.Models
 @using Lyra.Core.Models
 @using Lyra.Core.Services
+@using MudBlazor
+@using Transaction = Lyra.Core.Models.Transaction
 @inject TransactionRepository TransactionRepository
 @inject UserService UserService
+@inject EnableBankingService EnableBankingService
 
-<div class="mt-3">
-    <div class="d-flex align-items-center mb-3">
-        <button class="btn btn-outline-secondary btn-sm me-3" @onclick="OnBack">
-            <i class="bi bi-arrow-left me-1"></i>Back
-        </button>
-        <h4 class="mb-0">
-            <i class="bi bi-bank me-2"></i>@Account.Name
-        </h4>
-    </div>
+<MudText Typo="Typo.h4" Class="mb-1">
+    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="me-2 mb-1"/>@Account.Name
+</MudText>
 
-    @if (_transactions == null)
+@if (Account.CurrentBalance.HasValue)
+{
+    <MudText Typo="Typo.body1" Color="@(Account.CurrentBalance >= 0 ? Color.Success : Color.Error)" Class="mb-1">
+        <strong>@Account.CurrentBalance.Value.ToString("N2") €</strong>
+    </MudText>
+    @if (Account.CurrentBalanceAt.HasValue)
     {
-        <div class="d-flex align-items-center">
-            <strong>Loading transactions...</strong>
-            <div class="spinner-border ms-auto" role="status" aria-hidden="true"></div>
-        </div>
+        <MudText Typo="Typo.caption" Color="Color.Default" Class="mb-1">
+            Stand: @Account.CurrentBalanceAt.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+        </MudText>
     }
-    else if (!_transactions.Any())
-    {
-        <div class="alert alert-light border">
-            No transactions found for this account.
-        </div>
-    }
-    else
-    {
-        <div class="table-responsive shadow-sm">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Date</th>
-                        <th>Counterparty</th>
-                        <th>Description</th>
-                        <th class="text-end">Amount</th>
-                        <th style="min-width: 200px;">Category</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var tx in _transactions)
-                    {
-                        <tr>
-                            <td class="text-nowrap text-muted small">
-                                @tx.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
-                            </td>
-                            <td>
-                                <div><strong>@tx.CounterpartyName</strong></div>
-                                @if (!string.IsNullOrWhiteSpace(tx.CounterpartyIban))
-                                {
-                                    <div class="text-muted small">@tx.CounterpartyIban</div>
-                                }
-                            </td>
-                            <td class="text-muted small">@tx.Description</td>
-                            <td class="text-end text-nowrap @(tx.Amount >= 0 ? "text-success" : "text-danger")">
-                                <strong>@tx.Amount.ToString("N2") €</strong>
-                            </td>
-                            <td>
-                                <CategoryInput
-                                    Value="@tx.Category"
-                                    Suggestions="_allCategories"
-                                    OnCommit="@(cat => SetCategory(tx, cat))" />
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-    }
-</div>
+}
+
+<MudText Typo="Typo.body2" Color="Color.Default" Class="mb-4">Transactions for this account</MudText>
+
+@if (_externalConnection != null)
+{
+    <MudButton Variant="Variant.Text"
+               StartIcon="@Icons.Material.Filled.Sync"
+               EndIcon="@(_syncSettingsExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+               OnClick="() => _syncSettingsExpanded = !_syncSettingsExpanded"
+               Class="mb-2">
+        Sync-Settings
+    </MudButton>
+    <MudCollapse Expanded="_syncSettingsExpanded">
+        <MudPaper Class="pa-4 mb-6" Elevation="1">
+            <MudSelect T="string?"
+                       Label="Balance-Typ für Sync"
+                       Value="_selectedBalanceType"
+                       ValueChanged="OnBalanceTypeChanged"
+                       Clearable="
+                    true"
+                       HelperText="Leer lassen um Saldo-Sync zu deaktivieren">
+                @foreach (var type in _balanceTypes)
+                {
+                    <MudSelectItem T="string?" Value="@type">@type</MudSelectItem>
+                }
+            </MudSelect>
+        </MudPaper>
+    </MudCollapse>
+}
+
+@if (_transactions == null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-4"/>
+    <MudText Typo="Typo.body2" Class="mt-2">Loading transactions...</MudText>
+}
+else if (!_transactions.Any())
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
+        No transactions found for this account.
+    </MudAlert>
+}
+else
+{
+    <MudTable Items="_transactions"
+              Hover="true"
+              Striped="true"
+              Dense="true"
+              Elevation="2"
+              Class="rounded">
+        <HeaderContent>
+            <MudTh Style="width: 110px;">Date</MudTh>
+            <MudTh>Counterparty</MudTh>
+            <MudTh>Description</MudTh>
+            <MudTh Style="width: 130px; text-align: right;">Amount</MudTh>
+            <MudTh Style="min-width: 200px;">Category</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Date">
+                <MudText Typo="Typo.body2" Color="Color.Default">
+                    @context.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Counterparty">
+                <MudText Typo="Typo.body2" Color="Color.Default">
+                    <strong>@context.CounterpartyName</strong>
+                </MudText>
+                @if (!string.IsNullOrWhiteSpace(context.CounterpartyIban))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Default">@context.CounterpartyIban</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Description">
+                <MudText Typo="Typo.body2" Color="Color.Default">@context.Description</MudText>
+            </MudTd>
+            <MudTd DataLabel="Amount" Style="text-align: right;">
+                <MudText Typo="Typo.body2"
+                         Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
+                    <strong>@context.Amount.ToString("N2") €</strong>
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Category">
+                <CategoryInput
+                    Value="@context.Category"
+                    Suggestions="_allCategories"
+                    OnCommit="@(cat => SetCategory(context, cat))"/>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
 
 @code {
-    [Parameter, EditorRequired] public Account Account { get; set; } = null!;
-    [Parameter] public EventCallback OnBack { get; set; }
+
+    [Parameter, EditorRequired]
+    public Account Account { get; set; } = null!;
+
+    [Parameter]
+    public EventCallback OnBack { get; set; }
 
     private List<Transaction>? _transactions;
     private List<string> _allCategories = [];
+
+    private ExternalConnection? _externalConnection;
+    private string? _selectedBalanceType;
+    private bool _syncSettingsExpanded;
+
+    private static readonly List<string> _balanceTypes = Enum.GetNames<BalanceStatus>().ToList();
 
     protected override async Task OnParametersSetAsync()
     {
@@ -89,6 +141,18 @@
         var userId = await UserService.GetCurrentUserId();
         _transactions = (await TransactionRepository.GetTransactionsByAccountAsync(Account.Id)).ToList();
         _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
+        _externalConnection = await EnableBankingService.GetExternalConnectionByAccountIdAsync(Account.Id);
+        _selectedBalanceType = _externalConnection?.BalanceType;
+    }
+
+    private async Task OnBalanceTypeChanged(string? value)
+    {
+        _selectedBalanceType = value;
+        if (_externalConnection != null)
+        {
+            await EnableBankingService.SetBalanceTypeAsync(_externalConnection.Id, value);
+            _externalConnection.BalanceType = value;
+        }
     }
 
     private async Task SetCategory(Transaction tx, string? category)
@@ -96,8 +160,9 @@
         await TransactionRepository.SetCategoryAsync(tx.Id, category);
         tx.Category = category;
 
-        // Refresh suggestions if a new category was introduced
+    // Refresh suggestions if a new category was introduced
         var userId = await UserService.GetCurrentUserId();
         _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
     }
+
 }

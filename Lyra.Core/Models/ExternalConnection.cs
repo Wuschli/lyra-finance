@@ -14,4 +14,7 @@ public class ExternalConnection
     // Timestamp when the current access token or consent expires
     public DateTimeOffset? ExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+
+    // Which balance type to use when syncing (e.g. CLBD, ITAV). Null = skip balance sync.
+    public string? BalanceType { get; set; }
 }

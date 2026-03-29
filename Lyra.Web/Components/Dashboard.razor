@@ -9,7 +9,7 @@
 @attribute [Authorize]
 
 <MudText Typo="Typo.h4" Class="mb-1">Financial Overview</MudText>
-<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">Manage your accounts and transactions</MudText>
+<MudText Typo="Typo.body2" Color="Color.Default" Class="mb-6">Manage your accounts and transactions</MudText>
 
 <MudGrid>
     @if (_accounts != null && _accounts.Any())
@@ -25,9 +25,16 @@
                             </MudAvatar>
                             <div>
                                 <MudText Typo="Typo.h6">@account.Name</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                <MudText Typo="Typo.caption" Color="Color.Default">
                                     Created @account.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")
                                 </MudText>
+                                @if (account.CurrentBalance.HasValue)
+                                {
+                                    <MudText Typo="Typo.body2"
+                                             Color="@(account.CurrentBalance >= 0 ? Color.Success : Color.Error)">
+                                        <strong>@account.CurrentBalance.Value.ToString("N2") €</strong>
+                                    </MudText>
+                                }
                             </div>
                         </MudStack>
                     </MudCardContent>
@@ -98,10 +105,24 @@
     </MudButton>
 </MudStack>
 
+@if (_syncStatus == SyncStatus.Success)
+{
+    <MudAlert Severity="Severity.Success" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _syncStatus = null">
+        Sync completed successfully.
+    </MudAlert>
+}
+else if (_syncStatus == SyncStatus.Failure)
+{
+    <MudAlert Severity="Severity.Error" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _syncStatus = null">
+        Sync failed. Please check your connection and try again.
+    </MudAlert>
+}
+
 @code {
     private IEnumerable<Account>? _accounts;
     private string _newAccountName = string.Empty;
     private bool _isSyncing;
+    private SyncStatus? _syncStatus;
 
     protected override async Task OnInitializedAsync()
     {
@@ -140,9 +161,18 @@
     private async Task SyncTest()
     {
         _isSyncing = true;
+        _syncStatus = null;
         try
         {
-            await EnableBankingService.SyncExternalConnection(Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf"));
+            var status = await EnableBankingService.SyncExternalConnection(Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf"));
+
+            if (status == SyncStatus.SessionExpired)
+            {
+                await ExternalConnectionTest();
+                return;
+            }
+
+            _syncStatus = status;
         }
         finally
         {

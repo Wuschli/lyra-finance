@@ -30,7 +30,7 @@ public class AccountService
         using var connection = await _connectionFactory.CreateConnectionAsync();
 
         const string sql = @"
-            SELECT id, user_id, name, created_at
+            SELECT id, user_id, name, created_at, current_balance, current_balance_at
             FROM accounts
             WHERE user_id = @UserId
             ORDER BY name ASC;";

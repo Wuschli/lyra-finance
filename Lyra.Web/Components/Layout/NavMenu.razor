@@ -22,7 +22,17 @@
         {
             <MudNavLink Href="@($"/accounts/{account.Id}")"
                         Icon="@Icons.Material.Filled.CreditCard">
-                @account.Name
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Style="width: 100%;">
+                    <span>@account.Name</span>
+                    @if (account.CurrentBalance.HasValue)
+                    {
+                        <MudText Typo="Typo.caption"
+                                 Color="@(account.CurrentBalance >= 0 ? Color.Success : Color.Error)"
+                                 Style="margin-right: 12px;">
+                            @account.CurrentBalance.Value.ToString("N2") €
+                        </MudText>
+                    }
+                </MudStack>
             </MudNavLink>
         }
     }

@@ -4,5 +4,6 @@ public enum SyncStatus
 {
     InProgress,
     Success,
-    Failure
+    Failure,
+    SessionExpired
 }

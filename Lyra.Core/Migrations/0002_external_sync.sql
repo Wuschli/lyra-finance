@@ -5,6 +5,7 @@
     session_id TEXT,
     expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    balance_type VARCHAR(10) NULL,
     
     CONSTRAINT fk_user FOREIGN KEY(user_id) REFERENCES lyra.users(id) ON DELETE CASCADE
 );
@@ -50,3 +51,7 @@ CREATE TABLE IF NOT EXISTS lyra.enable_banking_accounts (
 
 CREATE INDEX IF NOT EXISTS idx_eba_connection_id ON enable_banking_accounts(external_connection_id);
 CREATE INDEX IF NOT EXISTS idx_eba_identification_hash ON enable_banking_accounts(identification_hash);
+
+ALTER TABLE lyra.accounts
+    ADD COLUMN IF NOT EXISTS current_balance NUMERIC(18, 2) NULL,
+    ADD COLUMN IF NOT EXISTS current_balance_at TIMESTAMP WITH TIME ZONE NULL;
