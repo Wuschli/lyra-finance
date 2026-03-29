@@ -2,7 +2,7 @@
 using Lyra.Core.Services;
 using Microsoft.AspNetCore.Authentication;
 
-namespace Lyra.Core;
+namespace Lyra.Core.Auth;
 
 public class UserClaimsTransformation : IClaimsTransformation
 {

@@ -1,12 +1,12 @@
 using DbUp;
 using Lyra.Core;
+using Lyra.Core.Auth;
 using Lyra.Core.Services;
 using Lyra.Web.Components;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.Kiota.Http.HttpClientLibrary;
 
@@ -113,7 +113,7 @@ public class Program
     {
         var connectionString = builder.Configuration.GetConnectionString("postgres");
 
-        // Sicherstellen, dass die DB existiert
+        // Make sure DB exists
         EnsureDatabase.For.PostgresqlDatabase(connectionString);
 
         var upgrader = DeployChanges.To
