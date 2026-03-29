@@ -29,6 +29,14 @@ public class Program
         builder.Services.AddMudServices();
         builder.Services.AddApexCharts();
 
+        builder.Services.AddWebOptimizer(pipeline =>
+        {
+            pipeline.AddJavaScriptBundle("/js/charts.js",
+                "js/chartTooltip.js",
+                "js/balanceChart.js",
+                "js/categoryPieChart.js");
+        });
+
         // Add services to the container.
         builder.Services
             .AddSingleton<IDbConnectionFactory>(new NpgsqlConnectionFactory(
@@ -80,7 +88,6 @@ public class Program
 
         builder.Services.AddControllers();
 
-
         var app = builder.Build();
 
         // Configure Dapper
@@ -95,6 +102,7 @@ public class Program
         app.UseAuthentication();
         app.UseAuthorization();
 
+        app.UseWebOptimizer();
         app.UseStaticFiles();
         app.UseAntiforgery();
 

@@ -75,7 +75,8 @@ window.balanceChart = (() => {
                 plugins: {
                     legend: { display: false },
                     tooltip: {
-                        displayColors: false,
+                        enabled: false,
+                        external: chartTooltip.handler,
                         callbacks: {
                             title: ctx => ctx[0]?.label ?? '',
                             label: ctx => ctx.parsed.y.toFixed(2) + ' \u20AC',
@@ -105,6 +106,7 @@ window.balanceChart = (() => {
     }
 
     function destroy(canvasId) {
+        chartTooltip.cleanup(canvasId);
         const existing = charts[canvasId];
         if (existing) {
             existing.destroy();

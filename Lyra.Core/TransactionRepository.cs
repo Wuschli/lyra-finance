@@ -40,6 +40,39 @@ public class TransactionRepository
         );
     }
 
+    public async Task<IEnumerable<Transaction>> GetTransactionsByUserAsync(Guid userId, DateTimeOffset from, DateTimeOffset to)
+    {
+        using var db = await _dbFactory.CreateConnectionAsync();
+        return await db.QueryAsync<Transaction>(
+            """
+            SELECT t.*
+            FROM lyra.transactions t
+            INNER JOIN lyra.accounts a ON a.id = t.account_id
+            WHERE a.user_id = @userId
+              AND t.transaction_date >= @from
+              AND t.transaction_date < @to
+            ORDER BY t.transaction_date DESC
+            """,
+            new { userId, from, to }
+        );
+    }
+
+    public async Task<IEnumerable<Transaction>> GetTransactionsByAccountAsync(Guid accountId, DateTimeOffset from, DateTimeOffset to)
+    {
+        using var db = await _dbFactory.CreateConnectionAsync();
+        return await db.QueryAsync<Transaction>(
+            """
+            SELECT *
+            FROM lyra.transactions
+            WHERE account_id = @accountId
+              AND transaction_date >= @from
+              AND transaction_date < @to
+            ORDER BY transaction_date DESC
+            """,
+            new { accountId, from, to }
+        );
+    }
+
     public async Task SetCategoryAsync(Guid transactionId, string? category)
     {
         using var db = await _dbFactory.CreateConnectionAsync();
