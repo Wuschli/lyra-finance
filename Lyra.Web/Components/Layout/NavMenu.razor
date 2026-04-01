@@ -43,6 +43,14 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _accounts = await AccountService.GetAccountsForCurrentUserAsync();
+        try
+        {
+            _accounts = await AccountService.GetAccountsForCurrentUserAsync();
+        }
+        catch (Exception)
+        {
+            _accounts = Enumerable.Empty<Account>();
+        }
     }
+
 }

@@ -15,186 +15,185 @@
 <MudText Typo="Typo.body2" Color="Color.Default" Class="mb-6">Manage your accounts and transactions</MudText>
 
 <MudGrid>
-@* Left column: Spending charts (2/3) *@
-<MudItem xs="12" md="8">
-    @if (_transactions != null && _accounts != null)
-    {
-        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
-            <MudText Typo="Typo.h6">Spending by Category</MudText>
-            <MudText Typo="Typo.caption" Color="Color.Default">
-                Last @_periodDays days (@_periodFrom.ToString("dd.MM.yyyy") – @_periodTo.AddDays(-1).ToString("dd.MM.yyyy"))
-            </MudText>
-        </MudStack>
 
-        @if (_combinedData.Count > 0)
-        {
-            <MudText Typo="Typo.subtitle1" Class="mb-2">All Accounts Combined</MudText>
-            <MudGrid Class="mb-6">
-                <MudItem xs="12" sm="6">
-                    <div style="position: relative; height: 280px;">
-                        <canvas id="@_combinedCanvasId"></canvas>
-                    </div>
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudSimpleTable Dense="true" Hover="true">
-                        <thead>
-                        <tr>
-                            <th>Category</th>
-                            <th style="text-align: right;">Amount</th>
-                            <th style="text-align: right;">Share</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        @{
-                            var combinedTotal = _combinedData.Sum(x => x.Value);
-                        }
-                        @foreach (var item in _combinedData)
-                        {
-                            <tr>
-                                <td>@item.Label</td>
-                                <td style="text-align: right;">@item.Value.ToString("N2") €</td>
-                                <td style="text-align: right;">@((item.Value / combinedTotal * 100).ToString("N1"))%</td>
-                            </tr>
-                        }
-                        </tbody>
-                    </MudSimpleTable>
-                </MudItem>
-            </MudGrid>
-        }
-        else
-        {
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-6">
-                No categorized expenses found for the selected period.
-            </MudAlert>
-        }
-
-    }
-    else
-    {
-        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-6"/>
-        <MudText Typo="Typo.body2" Class="mt-2">Loading spending data...</MudText>
-    }
-</MudItem>
-
-@* Right column: Accounts + actions (1/3) *@
-<MudItem xs="12" md="4">
-    <MudGrid>
-        @if (_accounts != null && _accounts.Any())
-        {
-            @foreach (var account in _accounts)
+    @* Left column: Accounts + actions (1/3) *@
+    <MudItem xs="12" md="4">
+        <MudGrid>
+            @if (_accounts != null && _accounts.Any())
             {
-                var canvasId = _accountCanvasIds[account.Id];
-                var accountData = _accountData[account.Id];
-                <MudItem xs="12">
-                    <MudCard Elevation="2" Style="cursor: pointer; overflow: visible;" @onclick='() => NavManager.NavigateTo($"/accounts/{account.Id}")'>
-                        <MudCardContent Style="overflow: visible;">
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
-                                <MudAvatar Color="Color.Primary" Variant="Variant.Filled">
-                                    <MudIcon Icon="@Icons.Material.Filled.AccountBalance"/>
-                                </MudAvatar>
-                                <div style="flex: 1; min-width: 0;">
-                                    <MudText Typo="Typo.h6">@account.Name</MudText>
-                                    <MudText Typo="Typo.caption" Color="Color.Default">
-                                        Created @account.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")
-                                    </MudText>
-                                    @if (account.CurrentBalance.HasValue)
-                                    {
-                                        <MudText Typo="Typo.body2"
-                                                 Color="@(account.CurrentBalance >= 0 ? Color.Success : Color.Error)">
-                                            <strong>@account.CurrentBalance.Value.ToString("N2") €</strong>
+                @foreach (var account in _accounts)
+                {
+                    var canvasId = _accountCanvasIds[account.Id];
+                    var accountData = _accountData[account.Id];
+                    <MudItem xs="12">
+                        <MudCard Elevation="2" Style="cursor: pointer; overflow: visible;" @onclick='() => NavManager.NavigateTo($"/accounts/{account.Id}")'>
+                            <MudCardContent Style="overflow: visible;">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+                                    <MudAvatar Color="Color.Primary" Variant="Variant.Filled">
+                                        <MudIcon Icon="@Icons.Material.Filled.AccountBalance"/>
+                                    </MudAvatar>
+                                    <div style="flex: 1; min-width: 0;">
+                                        <MudText Typo="Typo.h6">@account.Name</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Default">
+                                            Created @account.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")
                                         </MudText>
-                                    }
-                                </div>
-                                @if (accountData.Count > 0)
-                                {
-                                    <div style="width: 128px; height: 128px; flex-shrink: 0; overflow: visible;">
-                                        <canvas id="@canvasId"></canvas>
+                                        @if (account.CurrentBalance.HasValue)
+                                        {
+                                            <MudText Typo="Typo.body2"
+                                                     Color="@(account.CurrentBalance >= 0 ? Color.Success : Color.Error)">
+                                                <strong>@account.CurrentBalance.Value.ToString("N2") €</strong>
+                                            </MudText>
+                                        }
                                     </div>
-                                }
-                            </MudStack>
-                        </MudCardContent>
-                    </MudCard>
+                                    @if (accountData.Count > 0)
+                                    {
+                                        <div style="width: 128px; height: 128px; flex-shrink: 0; overflow: visible;">
+                                            <canvas id="@canvasId"></canvas>
+                                        </div>
+                                    }
+                                </MudStack>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            }
+
+            <MudItem xs="12">
+                <MudCard Elevation="1" Style="border: 2px dashed var(--mud-palette-divider);">
+                    <MudCardContent>
+                        <MudText Typo="Typo.subtitle1" Class="mb-3">
+                            <MudIcon Icon="@Icons.Material.Filled.Add" Class="me-1"/>
+                            New Account
+                        </MudText>
+                        <MudTextField @bind-Value="_newAccountName"
+                                      Label="Account Name"
+                                      Placeholder="e.g. Sparkasse, Crypto Wallet"
+                                      Variant="Variant.Outlined"
+                                      Adornment="Adornment.End"
+                                      AdornmentIcon="@Icons.Material.Filled.Add"
+                                      OnAdornmentClick="CreateAccount"
+                                      OnKeyUp="HandleKeyUp"
+                                      Immediate="true"
+                                      Class="mb-2"/>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   FullWidth="true"
+                                   StartIcon="@Icons.Material.Filled.Add"
+                                   Disabled="@string.IsNullOrWhiteSpace(_newAccountName)"
+                                   OnClick="CreateAccount">
+                            Add Account
+                        </MudButton>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+
+            @if (_accounts == null)
+            {
+                <MudItem xs="12">
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-2"/>
+                    <MudText Typo="Typo.body2" Class="mt-2">Loading accounts...</MudText>
                 </MudItem>
             }
-        }
+        </MudGrid>
 
-        <MudItem xs="12">
-            <MudCard Elevation="1" Style="border: 2px dashed var(--mud-palette-divider);">
-                <MudCardContent>
-                    <MudText Typo="Typo.subtitle1" Class="mb-3">
-                        <MudIcon Icon="@Icons.Material.Filled.Add" Class="me-1"/>
-                        New Account
-                    </MudText>
-                    <MudTextField @bind-Value="_newAccountName"
-                                  Label="Account Name"
-                                  Placeholder="e.g. Sparkasse, Crypto Wallet"
-                                  Variant="Variant.Outlined"
-                                  Adornment="Adornment.End"
-                                  AdornmentIcon="@Icons.Material.Filled.Add"
-                                  OnAdornmentClick="CreateAccount"
-                                  OnKeyUp="HandleKeyUp"
-                                  Immediate="true"
-                                  Class="mb-2"/>
-                    <MudButton Variant="Variant.Filled"
-                               Color="Color.Primary"
-                               FullWidth="true"
-                               StartIcon="@Icons.Material.Filled.Add"
-                               Disabled="@string.IsNullOrWhiteSpace(_newAccountName)"
-                               OnClick="CreateAccount">
-                        Add Account
-                    </MudButton>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
+        <MudDivider Class="my-4"/>
 
-        @if (_accounts == null)
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Link"
+                       OnClick="ExternalConnectionTest">
+                Connect Bank
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.Sync"
+                       Disabled="@_isSyncing"
+                       OnClick="SyncTest">
+                @if (_isSyncing)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2"/>
+                    <span>Syncing...</span>
+                }
+                else
+                {
+                    <span>Sync</span>
+                }
+            </MudButton>
+        </MudStack>
+
+        @if (_syncStatus == SyncStatus.Success)
         {
-            <MudItem xs="12">
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-2"/>
-                <MudText Typo="Typo.body2" Class="mt-2">Loading accounts...</MudText>
-            </MudItem>
+            <MudAlert Severity="Severity.Success" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _syncStatus = null">
+                Sync completed successfully.
+            </MudAlert>
         }
-    </MudGrid>
+        else if (_syncStatus == SyncStatus.Failure)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _syncStatus = null">
+                Sync failed. Please check your connection and try again.
+            </MudAlert>
+        }
+    </MudItem>
+    @* Right column: Spending charts (2/3) *@
+    <MudItem xs="12" md="8">
+        @if (_transactions != null && _accounts != null)
+        {
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+                <MudText Typo="Typo.h6">Spending by Category</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Default">
+                    Last @_periodDays days (@_periodFrom.ToString("dd.MM.yyyy") – @_periodTo.AddDays(-1).ToString("dd.MM.yyyy"))
+                </MudText>
+            </MudStack>
 
-    <MudDivider Class="my-4"/>
-
-    <MudStack Row="true" Spacing="2">
-        <MudButton Variant="Variant.Outlined"
-                   Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Link"
-                   OnClick="ExternalConnectionTest">
-            Connect Bank
-        </MudButton>
-        <MudButton Variant="Variant.Outlined"
-                   Color="Color.Secondary"
-                   StartIcon="@Icons.Material.Filled.Sync"
-                   Disabled="@_isSyncing"
-                   OnClick="SyncTest">
-            @if (_isSyncing)
+            @if (_combinedData.Count > 0)
             {
-                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2"/>
-                <span>Syncing...</span>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">All Accounts Combined</MudText>
+                <MudGrid Class="mb-6">
+                    <MudItem xs="12" sm="6">
+                        <div style="position: relative; height: 280px;">
+                            <canvas id="@_combinedCanvasId"></canvas>
+                        </div>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSimpleTable Dense="true" Hover="true">
+                            <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th style="text-align: right;">Amount</th>
+                                <th style="text-align: right;">Share</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @{
+                                var combinedTotal = _combinedData.Sum(x => x.Value);
+                            }
+                            @foreach (var item in _combinedData)
+                            {
+                                <tr>
+                                    <td>@item.Label</td>
+                                    <td style="text-align: right;">@item.Value.ToString("N2") €</td>
+                                    <td style="text-align: right;">@((item.Value / combinedTotal * 100).ToString("N1"))%</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+                </MudGrid>
             }
             else
             {
-                <span>Sync</span>
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-6">
+                    No categorized expenses found for the selected period.
+                </MudAlert>
             }
-        </MudButton>
-    </MudStack>
-
-    @if (_syncStatus == SyncStatus.Success)
-    {
-        <MudAlert Severity="Severity.Success" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _syncStatus = null">
-            Sync completed successfully.
-        </MudAlert>
-    }
-    else if (_syncStatus == SyncStatus.Failure)
-    {
-        <MudAlert Severity="Severity.Error" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _syncStatus = null">
-            Sync failed. Please check your connection and try again.
-        </MudAlert>
-    }
-</MudItem>
+        }
+        else
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-6"/>
+            <MudText Typo="Typo.body2" Class="mt-2">Loading spending data...</MudText>
+        }
+    </MudItem>
 </MudGrid>
 
 @code {
@@ -216,6 +215,8 @@
 
     private readonly string _combinedCanvasId = $"pie-combined-{Guid.NewGuid():N}";
 
+    private bool _isRendered;
+
     private record CategoryDataPoint(string Label, decimal Value);
 
     protected override async Task OnInitializedAsync()
@@ -225,6 +226,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        _isRendered = true;
         await RenderAllCharts();
     }
 
@@ -296,7 +298,7 @@
 
         await AccountService.CreateAccountForCurrentUserAsync(_newAccountName);
         _newAccountName = string.Empty;
-        await RefreshAccounts();
+        await RefreshData();
     }
 
     private async Task HandleKeyUp(KeyboardEventArgs e)
@@ -329,6 +331,7 @@
             }
 
             _syncStatus = status;
+            await RefreshData();
         }
         finally
         {
@@ -338,9 +341,19 @@
 
     public async ValueTask DisposeAsync()
     {
-        await JS.InvokeVoidAsync("categoryPieChart.destroy", _combinedCanvasId);
-        foreach (var canvasId in _accountCanvasIds.Values)
-            await JS.InvokeVoidAsync("categoryPieChart.destroy", canvasId);
+        if (!_isRendered)
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("categoryPieChart.destroy", _combinedCanvasId);
+            foreach (var canvasId in _accountCanvasIds.Values)
+                await JS.InvokeVoidAsync("categoryPieChart.destroy", canvasId);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit disconnected before disposal — JS interop is no longer available.
+        }
     }
 
 }

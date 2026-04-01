@@ -33,6 +33,11 @@ public class UserService
     public async Task<Guid> GetCurrentUserId()
     {
         var state = await _authStateProvider.GetAuthenticationStateAsync();
-        return state.User.GetUserId()!.Value;
+        var userId = state.User.GetUserId();
+
+        if (userId is null)
+            throw new InvalidOperationException("The current user does not have a Lyra user ID claim. Ensure the user is authenticated and claims have been transformed.");
+
+        return userId.Value;
     }
 }
