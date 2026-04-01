@@ -38,7 +38,7 @@ public class AccountService
         return await connection.QueryAsync<Account>(sql, new { UserId = userId });
     }
 
-    public async Task CreateAccountForCurrentUserAsync(string accountName)
+    public async Task<Guid> CreateAccountForCurrentUserAsync(string accountName)
     {
         var authState = await _authStateProvider.GetAuthenticationStateAsync();
         var userId = authState.User.GetUserId();
@@ -48,9 +48,10 @@ public class AccountService
         using var connection = await _connectionFactory.CreateConnectionAsync();
 
         const string sql = @"
-        INSERT INTO lyra.accounts (user_id, name)
-        VALUES (@UserId, @Name);";
+            INSERT INTO lyra.accounts (user_id, name)
+            VALUES (@UserId, @Name)
+            RETURNING id;";
 
-        await connection.ExecuteAsync(sql, new { UserId = userId.Value, Name = accountName });
+        return await connection.ExecuteScalarAsync<Guid>(sql, new { UserId = userId.Value, Name = accountName });
     }
 }

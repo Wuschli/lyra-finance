@@ -100,12 +100,6 @@
 
         <MudStack Row="true" Spacing="2">
             <MudButton Variant="Variant.Outlined"
-                       Color="Color.Primary"
-                       StartIcon="@Icons.Material.Filled.Link"
-                       OnClick="ExternalConnectionTest">
-                Connect Bank
-            </MudButton>
-            <MudButton Variant="Variant.Outlined"
                        Color="Color.Secondary"
                        StartIcon="@Icons.Material.Filled.Sync"
                        Disabled="@_isSyncing"
@@ -296,7 +290,7 @@
     {
         if (string.IsNullOrWhiteSpace(_newAccountName)) return;
 
-        await AccountService.CreateAccountForCurrentUserAsync(_newAccountName);
+        _ = await AccountService.CreateAccountForCurrentUserAsync(_newAccountName);
         _newAccountName = string.Empty;
         await RefreshData();
     }
@@ -307,14 +301,6 @@
             await CreateAccount();
     }
 
-    private async Task ExternalConnectionTest()
-    {
-        var result = await EnableBankingService.StartAuthorizationAsync(
-            Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf"),
-            await UserService.GetCurrentUserId());
-        if (result?.Url != null)
-            NavManager.NavigateTo(result.Url, true);
-    }
 
     private async Task SyncTest()
     {
@@ -322,11 +308,12 @@
         _syncStatus = null;
         try
         {
-            var status = await EnableBankingService.SyncExternalConnection(Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf"));
+            var connectionId = Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf");
+            var status = await EnableBankingService.SyncExternalConnection(connectionId);
 
             if (status == SyncStatus.SessionExpired)
             {
-                await ExternalConnectionTest();
+                await EnableBankingService.ReauthorizeAsync(connectionId);
                 return;
             }
 
@@ -352,7 +339,7 @@
         }
         catch (JSDisconnectedException)
         {
-            // Circuit disconnected before disposal — JS interop is no longer available.
+    // Circuit disconnected before disposal — JS interop is no longer available.
         }
     }
 

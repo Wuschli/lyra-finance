@@ -55,3 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_eba_identification_hash ON enable_banking_account
 ALTER TABLE lyra.accounts
     ADD COLUMN IF NOT EXISTS current_balance NUMERIC(18, 2) NULL,
     ADD COLUMN IF NOT EXISTS current_balance_at TIMESTAMP WITH TIME ZONE NULL;
+
+ALTER TABLE external_connections
+    ADD COLUMN IF NOT EXISTS connection_name TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS provider_data JSONB;

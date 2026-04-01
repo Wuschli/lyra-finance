@@ -16,6 +16,8 @@ public class EnableBankingService
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly UserService _userService;
 
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+
     public EnableBankingService(ApiClient client, IDbConnectionFactory connectionFactory, UserService userService)
     {
         _client = client;
@@ -26,30 +28,37 @@ public class EnableBankingService
 
     /// <summary>
     /// Starts the user authorization flow (POST /sessions).
+    /// Persists the ASPSP as provider_data JSON so the session can be re-authorized later.
     /// </summary>
-    public async Task<StartAuthorizationResponse?> StartAuthorizationAsync(Guid externalConnectionId, Guid userId)
+    public async Task<StartAuthorizationResponse?> StartAuthorizationAsync(Guid externalConnectionId, ASPSP aspsp)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
 
+        var userId = await _userService.GetCurrentUserId();
+        var providerDataJson = JsonSerializer.Serialize(aspsp, JsonOptions);
+
         const string sql = @"
             INSERT INTO external_connections 
-                (id, user_id, provider_name, created_at)
+                (id, user_id, provider_name, connection_name, provider_data, created_at)
             VALUES 
-                (@Id, @UserId, 'enable_banking', @Now)
+                (@Id, @UserId, 'enable_banking', @ConnectionName, @ProviderData::jsonb, @Now)
             ON CONFLICT (id)
-            DO NOTHING;";
+            DO UPDATE SET
+                provider_data = EXCLUDED.provider_data;";
 
         await connection.ExecuteAsync(sql, new
         {
             Id = externalConnectionId,
             UserId = userId,
+            ConnectionName = aspsp.Name ?? string.Empty,
+            ProviderData = providerDataJson,
             DateTimeOffset.Now
         });
 
         var authRequest = new StartAuthorizationRequest
         {
             Access = new Access { ValidUntil = DateTimeOffset.Now.AddDays(90) },
-            Aspsp = new ASPSP { Name = "Sparkasse Hildesheim Goslar Peine", Country = "DE" }, // TODO as parameter
+            Aspsp = aspsp,
             State = externalConnectionId.ToString(),
             RedirectUrl = "https://localhost:7001/enable_banking/callback", // TODO base url from config
             PsuType = PSUType.Personal
@@ -59,7 +68,52 @@ public class EnableBankingService
         return authResponse;
     }
 
-    // http://localhost:7001/enable_banking/callback?state=9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf&code=d8a3994a-a693-494b-a58f-62c5fc75929b
+    /// <summary>
+    /// Re-initiates the authorization flow for an existing connection whose session has expired,
+    /// using the ASPSP data that was stored when the connection was first created.
+    /// </summary>
+    public async Task<StartAuthorizationResponse?> ReauthorizeAsync(Guid externalConnectionId)
+    {
+        var userId = await _userService.GetCurrentUserId();
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            SELECT provider_data
+            FROM external_connections
+            WHERE id = @Id AND user_id = @UserId";
+
+        var providerDataJson = await connection.QueryFirstOrDefaultAsync<string>(sql, new { Id = externalConnectionId, UserId = userId });
+
+        if (string.IsNullOrEmpty(providerDataJson))
+            throw new InvalidOperationException($"No provider data found for connection {externalConnectionId}. Cannot re-authorize.");
+
+        var aspsp = JsonSerializer.Deserialize<ASPSP>(providerDataJson, JsonOptions)
+                    ?? throw new InvalidOperationException("Failed to deserialize stored ASPSP provider data.");
+
+        return await StartAuthorizationAsync(externalConnectionId, aspsp);
+    }
+
+    /// <summary>
+    /// Updates the user-visible display name of an external connection.
+    /// </summary>
+    public async Task UpdateConnectionNameAsync(Guid externalConnectionId, string connectionName)
+    {
+        var userId = await _userService.GetCurrentUserId();
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            UPDATE external_connections
+            SET connection_name = @ConnectionName
+            WHERE id = @Id AND user_id = @UserId";
+
+        await connection.ExecuteAsync(sql, new
+        {
+            Id = externalConnectionId,
+            UserId = userId,
+            ConnectionName = connectionName
+        });
+    }
+
     public async Task FinalizeConnectionAsync(Guid externalConnectionId, string code)
     {
         var sessionRequest = new AuthorizeSessionRequest
@@ -83,6 +137,140 @@ public class EnableBankingService
             WHERE id = @Id";
 
         await connection.ExecuteAsync(sql, new { Id = externalConnectionId, BalanceType = balanceType });
+    }
+
+    /// <summary>
+    /// Returns all external connections belonging to the current user.
+    /// </summary>
+    public async Task<IEnumerable<ExternalConnection>> GetConnectionsForCurrentUserAsync()
+    {
+        var userId = await _userService.GetCurrentUserId();
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            SELECT *
+            FROM external_connections
+            WHERE user_id = @UserId
+            ORDER BY created_at ASC;";
+
+        return await connection.QueryAsync<ExternalConnection>(sql, new { UserId = userId });
+    }
+
+    /// <summary>
+    /// Returns all EnableBanking accounts for the given connection,
+    /// together with the linked local account id (null if not linked).
+    /// </summary>
+    public async Task<IEnumerable<ExternalAccountWithLink>> GetExternalAccountsWithLinksAsync(Guid externalConnectionId)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            SELECT
+                eba.id,
+                eba.external_connection_id,
+                eba.identification_hash,
+                eba.name,
+                eba.details,
+                eba.iban,
+                eba.currency,
+                eba.account_type AS cash_account_type,
+                eba.product_name AS product,
+                eca.account_id AS linked_account_id
+            FROM enable_banking_accounts eba
+            LEFT JOIN external_connection_account eca
+                ON eca.connection_id = eba.external_connection_id
+                AND eca.external_account_id = eba.identification_hash
+            WHERE eba.external_connection_id = @ConnectionId;";
+
+        return await connection.QueryAsync<ExternalAccountWithLink>(sql, new { ConnectionId = externalConnectionId });
+    }
+
+    /// <summary>
+    /// Links an external account to an existing local account.
+    /// </summary>
+    public async Task LinkExternalAccountAsync(Guid externalConnectionId, string identificationHash, Guid localAccountId)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            INSERT INTO external_connection_account (connection_id, external_account_id, account_id)
+            VALUES (@ConnectionId, @ExternalAccountId, @AccountId)
+            ON CONFLICT (connection_id, external_account_id)
+            DO UPDATE SET account_id = EXCLUDED.account_id;";
+
+        await connection.ExecuteAsync(sql, new
+        {
+            ConnectionId = externalConnectionId,
+            ExternalAccountId = identificationHash,
+            AccountId = localAccountId
+        });
+    }
+
+    /// <summary>
+    /// Removes the link between an external account and any local account.
+    /// </summary>
+    public async Task UnlinkExternalAccountAsync(Guid externalConnectionId, string identificationHash)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            DELETE FROM external_connection_account
+            WHERE connection_id = @ConnectionId
+            AND external_account_id = @ExternalAccountId;";
+
+        await connection.ExecuteAsync(sql, new
+        {
+            ConnectionId = externalConnectionId,
+            ExternalAccountId = identificationHash
+        });
+    }
+
+    /// <summary>
+    /// Deletes an external connection and all associated data for the current user.
+    /// </summary>
+    public async Task DeleteConnectionAsync(Guid externalConnectionId)
+    {
+        var userId = await _userService.GetCurrentUserId();
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            DELETE FROM external_connections
+            WHERE id = @Id AND user_id = @UserId;";
+
+        await connection.ExecuteAsync(sql, new { Id = externalConnectionId, UserId = userId });
+    }
+
+    /// <summary>
+    /// Returns the most recent sync log entry for the given connection, or null if none exists.
+    /// </summary>
+    public async Task<SyncLog?> GetLastSyncLogAsync(Guid externalConnectionId)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            SELECT *
+            FROM lyra.sync_logs
+            WHERE connection_id = @ConnectionId
+            ORDER BY sync_end DESC NULLS LAST
+            LIMIT 1;";
+
+        return await connection.QueryFirstOrDefaultAsync<SyncLog>(sql, new { ConnectionId = externalConnectionId });
+    }
+
+    /// <summary>
+    /// Returns all sync log entries for the given connection, ordered by most recent first.
+    /// </summary>
+    public async Task<IEnumerable<SyncLog>> GetSyncLogsAsync(Guid externalConnectionId)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            SELECT *
+            FROM lyra.sync_logs
+            WHERE connection_id = @ConnectionId
+            ORDER BY sync_end DESC NULLS LAST;";
+
+        return await connection.QueryAsync<SyncLog>(sql, new { ConnectionId = externalConnectionId });
     }
 
     private async Task UpdateSession(Guid externalConnectionId, string sessionId, DateTimeOffset validUntil)

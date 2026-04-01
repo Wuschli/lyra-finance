@@ -23,12 +23,10 @@ public class EnableBankingController : ControllerBase
     [Authorize]
     public async Task<IActionResult> Callback([FromQuery] Guid? state, [FromQuery] string? code, [FromQuery] string? error)
     {
-
-        //// 1. Check for errors from the bank provider
         if (!string.IsNullOrEmpty(error))
         {
             _logger.LogWarning("Banking authorization failed: {Error}", error);
-            return Redirect($"/?error={error}");
+            return Redirect($"/settings/connections?error={error}");
         }
 
         if (state == null || string.IsNullOrEmpty(code))
@@ -38,18 +36,13 @@ public class EnableBankingController : ControllerBase
 
         try
         {
-            // 2. Finalize the connection 
-            // This usually involves exchanging the code for a permanent access token
-            // and saving it into your 'external_connections' table.
             await _bankingService.FinalizeConnectionAsync(state.Value, code);
-
-            // 3. Redirect the user back to the UI (e.g., your Blazor account settings)
-            return Redirect("/");
+            return Redirect("/settings/connections");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during banking finalization for state: {State}", state);
-            return Redirect("/?error=internal_error");
+            return Redirect("/settings/connections?error=internal_error");
         }
     }
 }

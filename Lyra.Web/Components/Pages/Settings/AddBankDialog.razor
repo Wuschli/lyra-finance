@@ -1,0 +1,37 @@
+@using MudBlazor
+@inject IDialogService DialogService
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_aspspName"
+                      Label="Bank Name"
+                      Placeholder="e.g. Sparkasse Hildesheim Goslar Peine"
+                      Required="true"
+                      RequiredError="Bank name is required."
+                      Class="mb-3"/>
+        <MudTextField @bind-Value="_aspspCountry"
+                      Label="Country (ISO 3166-1 alpha-2)"
+                      Placeholder="e.g. DE"
+                      Required="true"
+                      RequiredError="Country code is required."
+                      MaxLength="2"/>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit" Disabled="@(!IsValid)">Connect</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private string _aspspName = string.Empty;
+    private string _aspspCountry = string.Empty;
+
+    private bool IsValid => !string.IsNullOrWhiteSpace(_aspspName) && _aspspCountry.Length == 2;
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok((_aspspName.Trim(), _aspspCountry.Trim().ToUpperInvariant())));
+
+    private void Cancel() => MudDialog.Cancel();
+}

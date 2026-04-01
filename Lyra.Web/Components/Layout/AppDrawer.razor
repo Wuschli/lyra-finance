@@ -1,0 +1,14 @@
+@using MudBlazor
+
+<MudDrawer Open="true" Variant="DrawerVariant.Persistent" Elevation="1"
+           ClipMode="DrawerClipMode.Never" Width="260px">
+    <MudDrawerHeader Style="padding: 16px;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" Size="Size.Large"/>
+            <MudText Typo="Typo.h6" Style="font-weight: 700;">Lyra</MudText>
+        </MudStack>
+    </MudDrawerHeader>
+    <NavMenu/>
+    <MudSpacer/>
+    <DrawerUserPanel/>
+</MudDrawer>

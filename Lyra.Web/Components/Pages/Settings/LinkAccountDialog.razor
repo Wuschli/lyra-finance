@@ -1,0 +1,49 @@
+@using Lyra.Core.Models
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-3">
+            Select a local account to link with
+            <strong>@(ExternalAccount.Name ?? ExternalAccount.Iban ?? ExternalAccount.IdentificationHash)</strong>:
+        </MudText>
+        <MudSelect T="Guid?" Label="Local Account" @bind-Value="_selectedAccountId" Variant="Variant.Outlined">
+            @foreach (var account in LocalAccounts)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)account.Id)">@account.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   Disabled="@(_selectedAccountId == null)"
+                   OnClick="Submit">
+            Link
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public List<Account> LocalAccounts { get; set; } = new();
+
+    [Parameter]
+    public ExternalAccountWithLink ExternalAccount { get; set; } = null!;
+
+    private Guid? _selectedAccountId;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        if (_selectedAccountId.HasValue)
+            MudDialog.Close(DialogResult.Ok(_selectedAccountId.Value));
+    }
+
+}

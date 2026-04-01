@@ -1,0 +1,27 @@
+@using MudBlazor
+
+<MudLayout>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Small" Class="pa-6" Style="margin-top: 20vh;">
+            <MudPaper Elevation="4" Class="pa-8">
+                <MudStack AlignItems="AlignItems.Center" Spacing="4">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" Size="Size.Large"/>
+                        <MudText Typo="Typo.h5" Style="font-weight: 700;">Lyra</MudText>
+                    </MudStack>
+                    <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary">
+                        Please log in to continue.
+                    </MudText>
+                    <MudButton Href="auth/login"
+                               Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Size="Size.Large"
+                               StartIcon="@Icons.Material.Filled.Login"
+                               FullWidth="true">
+                        Login
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>

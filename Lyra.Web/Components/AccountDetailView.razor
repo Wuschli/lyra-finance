@@ -15,10 +15,6 @@
     <MudText Typo="Typo.h4">
         <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="me-2 mb-1"/>@Account.Name
     </MudText>
-    @if (_externalConnection != null)
-    {
-        <MudIconButton Icon="@Icons.Material.Filled.Settings" Title="Sync-Settings" OnClick="() => _syncSettingsExpanded = !_syncSettingsExpanded"/>
-    }
 </MudStack>
 
 @if (Account.CurrentBalance.HasValue)
@@ -32,25 +28,6 @@
             Stand: @Account.CurrentBalanceAt.Value.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
         </MudText>
     }
-}
-
-@if (_externalConnection != null)
-{
-    <MudCollapse Expanded="_syncSettingsExpanded">
-        <MudPaper Class="pa-4 mb-4" Elevation="1">
-            <MudSelect T="string?"
-                       Label="Balance-Typ für Sync"
-                       Value="_selectedBalanceType"
-                       ValueChanged="OnBalanceTypeChanged"
-                       Clearable="true"
-                       HelperText="Leer lassen um Saldo-Sync zu deaktivieren">
-                @foreach (var type in _balanceTypes)
-                {
-                    <MudSelectItem T="string?" Value="@type">@type</MudSelectItem>
-                }
-            </MudSelect>
-        </MudPaper>
-    </MudCollapse>
 }
 
 @if (_transactions == null)
@@ -134,13 +111,7 @@ else
     private List<Transaction>? _transactions;
     private List<string> _allCategories = new();
 
-    private ExternalConnection? _externalConnection;
-    private string? _selectedBalanceType;
-    private bool _syncSettingsExpanded;
-
     private List<BalancePoint> _balanceHistory = new();
-
-    private static readonly List<string> _balanceTypes = Enum.GetNames<BalanceStatus>().ToList();
 
     private readonly string _canvasId = $"balance-chart-{Guid.NewGuid():N}";
 
@@ -175,8 +146,6 @@ else
         var userId = await UserService.GetCurrentUserId();
         _transactions = (await TransactionRepository.GetTransactionsByAccountAsync(Account.Id)).ToList();
         _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
-        _externalConnection = await EnableBankingService.GetExternalConnectionByAccountIdAsync(Account.Id);
-        _selectedBalanceType = _externalConnection?.BalanceType;
         _balanceHistory = BuildBalanceHistory(_transactions, Account.CurrentBalance, 30);
     }
 
@@ -216,16 +185,6 @@ else
 
         points.Reverse(); // oldest → newest
         return points;
-    }
-
-    private async Task OnBalanceTypeChanged(string? value)
-    {
-        _selectedBalanceType = value;
-        if (_externalConnection != null)
-        {
-            await EnableBankingService.SetBalanceTypeAsync(_externalConnection.Id, value);
-            _externalConnection.BalanceType = value;
-        }
     }
 
     private async Task SetCategory(Transaction tx, string? category)

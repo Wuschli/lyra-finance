@@ -1,0 +1,22 @@
+@using MudBlazor
+
+<AuthorizeView>
+    <Authorized>
+        <div class="user-panel-actions">
+            <MudButton Href="auth/logout"
+                       Variant="Variant.Outlined"
+                       Color="Color.Error"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Logout"
+                       FullWidth="true">
+                Logout
+            </MudButton>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+<style>
+    .user-panel-actions {
+        padding: 12px 16px;
+    }
+</style>

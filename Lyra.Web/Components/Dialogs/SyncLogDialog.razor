@@ -1,0 +1,122 @@
+@using Lyra.Core.Models
+@using Lyra.Core.Services
+@using MudBlazor
+@inject EnableBankingService EnableBankingService
+
+<MudDialog>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mb-4"/>
+        }
+        else if (_logs.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">No sync logs found for this connection.</MudAlert>
+        }
+        else
+        {
+            <MudSelect T="SyncLog"
+                       Label="Sync Run"
+                       Value="_selectedLog"
+                       ValueChanged="@(log => _selectedLog = log)"
+                       ToStringFunc="@(log => log is null ? string.Empty : FormatLogLabel(log))"
+                       Variant="Variant.Outlined"
+                       Class="mb-4">
+                @foreach (var log in _logs)
+                {
+                    <MudSelectItem T="SyncLog" Value="@log">
+                        @FormatLogLabel(log)
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (_selectedLog is not null)
+            {
+                <MudPaper Outlined="true" Class="pa-4">
+                    <MudStack Spacing="3">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Tertiary">Started</MudText>
+                            <MudText Typo="Typo.body2">@_selectedLog.SyncStart.ToString("g")</MudText>
+                        </MudStack>
+
+                        @if (_selectedLog.SyncEnd is not null)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.subtitle2" Color="Color.Tertiary">Finished</MudText>
+                                <MudText Typo="Typo.body2">@_selectedLog.SyncEnd.Value.ToString("g")</MudText>
+                            </MudStack>
+
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.subtitle2" Color="Color.Tertiary">Duration</MudText>
+                                <MudText Typo="Typo.body2">@FormatDuration(_selectedLog.SyncStart, _selectedLog.SyncEnd.Value)</MudText>
+                            </MudStack>
+                        }
+
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Tertiary">Status</MudText>
+                            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(_selectedLog.Status)">
+                                @_selectedLog.Status
+                            </MudChip>
+                        </MudStack>
+
+                        @if (!string.IsNullOrWhiteSpace(_selectedLog.Message))
+                        {
+                            <MudDivider/>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Tertiary">Message</MudText>
+                            <MudText Typo="Typo.caption"
+                                     Style="white-space: pre-wrap; word-break: break-word; font-family: monospace;">
+                                @_selectedLog.Message
+                            </MudText>
+                        }
+                    </MudStack>
+                </MudPaper>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Close())">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter]
+    public Guid ConnectionId { get; set; }
+
+    private bool _loading = true;
+    private List<SyncLog> _logs = new();
+    private SyncLog? _selectedLog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _logs = (await EnableBankingService.GetSyncLogsAsync(ConnectionId))
+            .OrderByDescending(l => l.SyncStart)
+            .ToList();
+        _selectedLog = _logs.FirstOrDefault();
+        _loading = false;
+    }
+
+    private static string FormatLogLabel(SyncLog log)
+    {
+        var time = log.SyncEnd?.ToString("g") ?? log.SyncStart.ToString("g");
+        return $"{time} — {log.Status}";
+    }
+
+    private static string FormatDuration(DateTimeOffset start, DateTimeOffset end)
+    {
+        var duration = end - start;
+        return duration.TotalSeconds < 60
+            ? $"{duration.TotalSeconds:F1}s"
+            : $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
+    }
+
+    private static Color GetStatusColor(string status) => status switch
+    {
+        nameof(SyncStatus.Success) => Color.Success,
+        nameof(SyncStatus.SessionExpired) => Color.Warning,
+        nameof(SyncStatus.Failure) => Color.Error,
+        _ => Color.Default
+    };
+}

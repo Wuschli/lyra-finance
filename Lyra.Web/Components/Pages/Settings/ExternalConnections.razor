@@ -1,0 +1,389 @@
+@page "/settings/connections"
+@attribute [Authorize]
+@using Lyra.Core.Models
+@using Lyra.Core.Services
+@using MudBlazor
+@using Lyra.Core.EnableBanking.Models
+@using Lyra.Web.Components.Dialogs
+@inject EnableBankingService EnableBankingService
+@inject AccountService AccountService
+@inject NavigationManager NavigationManager
+@inject IDialogService DialogService
+
+<PageTitle>External Connections</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4">External Connections</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Class="mb-4"/>
+}
+else
+{
+    @if (_connections.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Class="mb-4">
+            No bank connections set up yet. Click <strong>Add Bank</strong> to connect your first bank.
+        </MudAlert>
+    }
+
+    @foreach (var conn in _connections)
+    {
+        var accounts = _accountsByConnection.GetValueOrDefault(conn.Id) ?? new();
+        var isSyncing = _syncingConnections.Contains(conn.Id);
+        SyncLog? lastLog = _lastSyncLogs.GetValueOrDefault(conn.Id);
+
+        <MudCard Class="mb-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary"/>
+                        <div>
+                            <MudStack Row="true" AlignItems="AlignItems.Baseline" Spacing="1">
+                                <MudTextField T="string"
+                                              Value="@conn.ConnectionName"
+                                              ValueChanged="@(v => RenameConnectionAsync(conn, v))"
+                                              Typo="Typo.h6"
+                                              Variant="Variant.Text"
+                                              Margin="Margin.Dense"
+                                              Style="font-weight: 500"/>
+                            </MudStack>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudChip T="string" Size="Size.Small" Color="@(IsExpired(conn) ? Color.Error : Color.Success)">
+                                    @(IsExpired(conn) ? "Session expired" : $"Valid until {conn.ExpiresAt:d}")
+                                </MudChip>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    Connected @conn.CreatedAt.ToString("d")
+                                </MudText>
+                                @if (lastLog != null)
+                                {
+                                    <MudChip T="string" Size="Size.Small"
+                                             Color="@GetSyncLogColor(lastLog.Status)"
+                                             Icon="@GetSyncLogIcon(lastLog.Status)">
+                                        @($"Last sync {lastLog.SyncEnd?.ToString("g") ?? lastLog.SyncStart.ToString("g")}")
+                                    </MudChip>
+                                }
+                            </MudStack>
+                        </div>
+                    </MudStack>
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+                        <MudSelect T="string?"
+                                   Value="@conn.BalanceType"
+                                   ValueChanged="@(v => SetBalanceTypeAsync(conn, v))"
+                                   Placeholder="Balance Type"
+                                   Clearable="true"
+                                   Margin="Margin.Dense"
+                                   Variant="Variant.Text"
+                                   DisableUnderLine="true"
+                                   Style="min-width: 110px; max-width: 150px; margin-top: 0; margin-bottom: 0;"
+                                   InputClass="py-0"
+                                   ToStringFunc="@(v => v ?? "No balance sync")">
+                            @foreach (var type in _balanceTypes)
+                            {
+                                <MudSelectItem T="string?" Value="@type">@type</MudSelectItem>
+                            }
+                        </MudSelect>
+                        <MudIconButton Icon="@Icons.Material.Outlined.Assignment"
+                                       Color="Color.Default"
+                                       Title="View sync logs"
+                                       OnClick="@(() => OpenSyncLogDialogAsync(conn.Id, conn.ConnectionName))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Sync"
+                                       Color="Color.Primary"
+                                       Title="Synchronize connection"
+                                       Disabled="@isSyncing"
+                                       OnClick="@(() => SyncConnectionAsync(conn.Id))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Color="Color.Error"
+                                       Title="Remove connection"
+                                       OnClick="@(() => DeleteConnectionAsync(conn.Id))" />
+                    </MudStack>
+                </CardHeaderActions>
+            </MudCardHeader>
+
+            @if (isSyncing)
+            {
+                <MudProgressLinear Indeterminate="true"/>
+            }
+
+            <MudCardContent>
+                @if (accounts.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">No accounts found for this connection.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="accounts" Dense="true" Hover="true" Elevation="0">
+                        <ColGroup>
+                            <col style="width: 20%"/>
+                            <col style="width: 20%"/>
+                            <col style="width: 5%"/>
+                            <col style="width: 15%"/>
+                            <col style="width: 40%"/>
+                        </ColGroup>
+                        <HeaderContent>
+                            <MudTh>External Account</MudTh>
+                            <MudTh>IBAN</MudTh>
+                            <MudTh>Currency</MudTh>
+                            <MudTh>Linked Account</MudTh>
+                            <MudTh>Actions</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>
+                                <MudText Typo="Typo.body2">@(context.Name ?? context.Details ?? context.IdentificationHash)</MudText>
+                                @if (context.Product != null)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Product</MudText>
+                                }
+                            </MudTd>
+                            <MudTd>
+                                <MudText Typo="Typo.body2">@(context.Iban ?? "—")</MudText>
+                            </MudTd>
+                            <MudTd>
+                                <MudText Typo="Typo.body2">@context.Currency</MudText>
+                            </MudTd>
+                            <MudTd>
+                                @if (context.LinkedAccountId.HasValue)
+                                {
+                                    var localAccount = _localAccounts.FirstOrDefault(a => a.Id == context.LinkedAccountId.Value);
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.Link">
+                                        @(localAccount?.Name ?? context.LinkedAccountId.Value.ToString())
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Icon="@Icons.Material.Filled.LinkOff">
+                                        Not linked
+                                    </MudChip>
+                                }
+                            </MudTd>
+                            <MudTd>
+                                @if (context.LinkedAccountId.HasValue)
+                                {
+                                    <MudButton Size="Size.Small"
+                                               Variant="Variant.Outlined"
+                                               StartIcon="@Icons.Material.Filled.LinkOff"
+                                               Color="Color.Error"
+                                               OnClick="@(() => UnlinkAccountAsync(context))">
+                                        Unlink
+                                    </MudButton>
+                                }
+                                else
+                                {
+                                    <MudStack Row="true" Spacing="1">
+                                        <MudButton Size="Size.Small"
+                                                   Variant="Variant.Outlined"
+                                                   StartIcon="@Icons.Material.Filled.AddCircle"
+                                                   OnClick="@(() => CreateAndLinkAccountAsync(context))">
+                                            New Account
+                                        </MudButton>
+                                        <MudButton Size="Size.Small"
+                                                   Variant="Variant.Outlined"
+                                                   StartIcon="@Icons.Material.Filled.Link"
+                                                   OnClick="@(() => OpenLinkDialogAsync(context))">
+                                            Link Existing
+                                        </MudButton>
+                                    </MudStack>
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudCardContent>
+        </MudCard>
+    }
+
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="AddBankAsync">
+        Add Bank
+    </MudButton>
+}
+
+@code {
+    private bool _loading = true;
+    private List<ExternalConnection> _connections = new();
+
+    private Dictionary<Guid, List<ExternalAccountWithLink>> _accountsByConnection = new();
+
+    private List<Account> _localAccounts = new();
+
+    private HashSet<Guid> _syncingConnections = new();
+    private Dictionary<Guid, SyncLog> _lastSyncLogs = new();
+
+    private static readonly List<string> _balanceTypes = Enum.GetNames<BalanceStatus>().ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        try
+        {
+            var connectionsTask = EnableBankingService.GetConnectionsForCurrentUserAsync();
+            var localAccountsTask = AccountService.GetAccountsForCurrentUserAsync();
+
+            await Task.WhenAll(connectionsTask, localAccountsTask);
+
+            _connections = (await connectionsTask).ToList();
+            _localAccounts = (await localAccountsTask).ToList();
+
+            _accountsByConnection = new();
+            _lastSyncLogs = new();
+            foreach (var conn in _connections)
+            {
+                var extAccounts = await EnableBankingService.GetExternalAccountsWithLinksAsync(conn.Id);
+                _accountsByConnection[conn.Id] = extAccounts.ToList();
+
+                var lastLog = await EnableBankingService.GetLastSyncLogAsync(conn.Id);
+                if (lastLog != null)
+                    _lastSyncLogs[conn.Id] = lastLog;
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static bool IsExpired(ExternalConnection conn) =>
+        conn.ExpiresAt.HasValue && conn.ExpiresAt.Value < DateTimeOffset.UtcNow;
+
+    private static Color GetSyncLogColor(string status) => status switch
+    {
+        nameof(SyncStatus.Success) => Color.Success,
+        nameof(SyncStatus.SessionExpired) => Color.Warning,
+        nameof(SyncStatus.Failure) => Color.Error,
+        _ => Color.Default
+        };
+
+    private static string GetSyncLogIcon(string status) => status switch
+    {
+        nameof(SyncStatus.Success) => Icons.Material.Filled.CheckCircle,
+        nameof(SyncStatus.SessionExpired) => Icons.Material.Filled.Warning,
+        _ => Icons.Material.Filled.Error
+        };
+
+    private async Task RenameConnectionAsync(ExternalConnection conn, string newName)
+    {
+        if (conn.ConnectionName == newName)
+            return;
+
+        conn.ConnectionName = newName;
+        await EnableBankingService.UpdateConnectionNameAsync(conn.Id, newName);
+    }
+
+    private async Task SetBalanceTypeAsync(ExternalConnection conn, string? balanceType)
+    {
+        if (conn.BalanceType == balanceType)
+            return;
+
+        conn.BalanceType = balanceType;
+        await EnableBankingService.SetBalanceTypeAsync(conn.Id, balanceType);
+    }
+
+    private async Task SyncConnectionAsync(Guid connectionId)
+    {
+        _syncingConnections.Add(connectionId);
+        _lastSyncLogs.Remove(connectionId);
+        StateHasChanged();
+
+        await EnableBankingService.SyncExternalConnection(connectionId);
+
+        _syncingConnections.Remove(connectionId);
+
+        var lastLog = await EnableBankingService.GetLastSyncLogAsync(connectionId);
+        if (lastLog != null)
+            _lastSyncLogs[connectionId] = lastLog;
+
+        if (lastLog?.Status == nameof(SyncStatus.Success))
+            await LoadDataAsync();
+        else
+            StateHasChanged();
+    }
+
+    private async Task OpenSyncLogDialogAsync(Guid connectionId, string connectionName)
+    {
+        var parameters = new DialogParameters<SyncLogDialog>
+        {
+            { x => x.ConnectionId, connectionId }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        await DialogService.ShowAsync<SyncLogDialog>($"Sync Logs – {connectionName}", parameters, options);
+    }
+
+    private async Task AddBankAsync()
+    {
+        var parameters = new DialogParameters<AddBankDialog>();
+        var dialog = await DialogService.ShowAsync<AddBankDialog>("Add Bank Connection", parameters);
+        var result = await dialog.Result;
+
+        if (result.Canceled || result.Data is not (string aspspName, string aspspCountry))
+            return;
+
+        var newConnectionId = Guid.NewGuid();
+        var response = await EnableBankingService.StartAuthorizationAsync(newConnectionId, new ASPSP { Name = aspspName, Country = aspspCountry });
+        if (response?.Url != null)
+            NavigationManager.NavigateTo(response.Url, forceLoad: true);
+    }
+
+    private async Task DeleteConnectionAsync(Guid connectionId)
+    {
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            "Remove Connection",
+            "Are you sure you want to remove this bank connection? All linked account associations will be lost.",
+            yesText: "Remove", cancelText: "Cancel");
+
+        if (confirmed != true) return;
+
+        await EnableBankingService.DeleteConnectionAsync(connectionId);
+        await LoadDataAsync();
+    }
+
+    private async Task UnlinkAccountAsync(ExternalAccountWithLink extAccount)
+    {
+        await EnableBankingService.UnlinkExternalAccountAsync(extAccount.ExternalConnectionId, extAccount.IdentificationHash);
+        await LoadDataAsync();
+    }
+
+    private async Task CreateAndLinkAccountAsync(ExternalAccountWithLink extAccount)
+    {
+        var suggestedName = extAccount.Name ?? extAccount.Iban ?? extAccount.IdentificationHash;
+        var newAccountId = await AccountService.CreateAccountForCurrentUserAsync(suggestedName);
+        await EnableBankingService.LinkExternalAccountAsync(extAccount.ExternalConnectionId, extAccount.IdentificationHash, newAccountId);
+        await LoadDataAsync();
+    }
+
+    private async Task OpenLinkDialogAsync(ExternalAccountWithLink extAccount)
+    {
+        var linkedAccountIds = _accountsByConnection.Values
+            .SelectMany(accounts => accounts)
+            .Where(a => a.LinkedAccountId.HasValue)
+            .Select(a => a.LinkedAccountId!.Value)
+            .ToHashSet();
+
+        var unlinkedAccounts = _localAccounts
+            .Where(a => !linkedAccountIds.Contains(a.Id))
+            .ToList();
+
+        var parameters = new DialogParameters<LinkAccountDialog>
+        {
+            { x => x.LocalAccounts, unlinkedAccounts },
+            { x => x.ExternalAccount, extAccount }
+        };
+        var dialog = await DialogService.ShowAsync<LinkAccountDialog>("Link to Existing Account", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is Guid selectedAccountId)
+        {
+            await EnableBankingService.LinkExternalAccountAsync(extAccount.ExternalConnectionId, extAccount.IdentificationHash, selectedAccountId);
+            await LoadDataAsync();
+        }
+    }
+
+}
