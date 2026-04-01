@@ -1,7 +1,7 @@
-﻿@using Lyra.Core
-@using Lyra.Core.Models
+﻿@using Lyra.Core.Models
 @using Lyra.Core.Services
 @using MudBlazor
+@using Lyra.Core
 @inject AccountService AccountService
 @inject NavigationManager NavManager
 @inject EnableBankingService EnableBankingService
@@ -145,7 +145,7 @@
                 <MudText Typo="Typo.subtitle1" Class="mb-2">All Accounts Combined</MudText>
                 <MudGrid Class="mb-6">
                     <MudItem xs="12" sm="6">
-                        <div style="position: relative; height: 280px;">
+                        <div style="position: relative; width: 100%;">
                             <canvas id="@_combinedCanvasId"></canvas>
                         </div>
                     </MudItem>
@@ -158,14 +158,20 @@
                                 <th style="text-align: right;">Share</th>
                             </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="@_combinedTbodyId">
                             @{
                                 var combinedTotal = _combinedData.Sum(x => x.Value);
                             }
                             @foreach (var item in _combinedData)
                             {
-                                <tr>
-                                    <td>@item.Label</td>
+                                var color = _combinedColors.GetValueOrDefault(item.Label, ColorPalette.Get(61));
+                                <tr data-segment-label="@item.Label" style="cursor: default;">
+                                    <td>
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                            <div style="width: 10px; height: 10px; border-radius: 50%; background-color: @color; flex-shrink: 0;"></div>
+                                            @item.Label
+                                        </MudStack>
+                                    </td>
                                     <td style="text-align: right;">@item.Value.ToString("N2") €</td>
                                     <td style="text-align: right;">@((item.Value / combinedTotal * 100).ToString("N1"))%</td>
                                 </tr>
@@ -202,16 +208,45 @@
     private DateTimeOffset _periodTo;
 
     private List<CategoryDataPoint> _combinedData = new();
+    private Dictionary<string, string> _combinedColors = new();
 
     private Dictionary<Guid, List<CategoryDataPoint>> _accountData = new();
+    private Dictionary<Guid, Dictionary<string, string>> _accountColors = new();
 
     private Dictionary<Guid, string> _accountCanvasIds = new();
 
     private readonly string _combinedCanvasId = $"pie-combined-{Guid.NewGuid():N}";
+    private readonly string _combinedTbodyId = $"tbody-combined-{Guid.NewGuid():N}";
 
     private bool _isRendered;
 
+    private static readonly Dictionary<string, string> CategoryColors = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Rent"]             = ColorPalette.Get(1),
+        ["Healthcare"]       = ColorPalette.Get(2),
+        ["Subscriptions"]    = ColorPalette.Get(3),
+        ["Uncategorized"]    = ColorPalette.Get(4),
+        ["Transportation"]   = ColorPalette.Get(5),
+        ["Groceries"]        = ColorPalette.Get(6),
+        ["Transfer"]         = ColorPalette.Get(7),
+        ["Hobby"]            = ColorPalette.Get(8),
+        ["Miscellaneous"]    = ColorPalette.Get(9),
+        ["Sports & Fitness"] = ColorPalette.Get(10),
+        ["Food & Drink"]     = ColorPalette.Get(11),
+        ["Fees"]             = ColorPalette.Get(12),
+        ["Entertainment"]    = ColorPalette.Get(13),
+        ["Savings"]          = ColorPalette.Get(14),
+        ["Insurance"]        = ColorPalette.Get(15),
+        ["Education"]        = ColorPalette.Get(16),
+    };
+
     private record CategoryDataPoint(string Label, decimal Value);
+
+    private static string ColorForLabel(string label)
+        => CategoryColors.GetValueOrDefault(label, "#cccccc");
+
+    private static Dictionary<string, string> BuildColorMap(IEnumerable<CategoryDataPoint> data)
+        => data.ToDictionary(x => x.Label, x => ColorForLabel(x.Label));
 
     protected override async Task OnInitializedAsync()
     {
@@ -222,32 +257,42 @@
     {
         _isRendered = true;
         await RenderAllCharts();
+
+        if (_combinedData.Count > 0)
+        {
+            var allCanvasIds = _accountCanvasIds.Values
+                .Prepend(_combinedCanvasId)
+                .ToArray();
+            await JS.InvokeVoidAsync("categoryPieChart.bindTableHover", _combinedTbodyId, allCanvasIds);
+        }
     }
 
     private async Task RenderAllCharts()
     {
         if (_combinedData.Count > 0)
-            await RenderPieChart(_combinedCanvasId, _combinedData);
+            await RenderPieChart(_combinedCanvasId, _combinedData, _combinedColors);
 
         foreach (var (accountId, canvasId) in _accountCanvasIds)
         {
             if (_accountData.TryGetValue(accountId, out var data) && data.Count > 0)
-                await RenderCompactPieChart(canvasId, data);
+                await RenderCompactPieChart(canvasId, data, _accountColors[accountId]);
         }
     }
 
-    private async Task RenderPieChart(string canvasId, List<CategoryDataPoint> data)
+    private async Task RenderPieChart(string canvasId, List<CategoryDataPoint> data, Dictionary<string, string> colors)
     {
         var labels = data.Select(x => x.Label).ToArray();
         var values = data.Select(x => (double)x.Value).ToArray();
-        await JS.InvokeVoidAsync("categoryPieChart.render", canvasId, labels, values, "Total Expenses");
+        var colorArray = labels.Select(l => colors.GetValueOrDefault(l, "#cccccc")).ToArray();
+        await JS.InvokeVoidAsync("categoryPieChart.render", canvasId, labels, values, colorArray, "Total Expenses");
     }
 
-    private async Task RenderCompactPieChart(string canvasId, List<CategoryDataPoint> data)
+    private async Task RenderCompactPieChart(string canvasId, List<CategoryDataPoint> data, Dictionary<string, string> colors)
     {
         var labels = data.Select(x => x.Label).ToArray();
         var values = data.Select(x => (double)x.Value).ToArray();
-        await JS.InvokeVoidAsync("categoryPieChart.renderCompact", canvasId, labels, values, "Total Expenses");
+        var colorArray = labels.Select(l => colors.GetValueOrDefault(l, "#cccccc")).ToArray();
+        await JS.InvokeVoidAsync("categoryPieChart.renderCompact", canvasId, labels, values, colorArray, "Total Expenses");
     }
 
     private async Task RefreshData()
@@ -260,13 +305,16 @@
         _transactions = (await TransactionRepository.GetTransactionsByUserAsync(userId, _periodFrom, _periodTo)).ToList();
 
         _combinedData = BuildCategoryData(_transactions);
+        _combinedColors = BuildColorMap(_combinedData);
 
         _accountData = new();
+        _accountColors = new();
         _accountCanvasIds = new();
         foreach (var account in _accounts)
         {
             var accountTxs = _transactions.Where(t => t.AccountId == account.Id);
             _accountData[account.Id] = BuildCategoryData(accountTxs);
+            _accountColors[account.Id] = BuildColorMap(_accountData[account.Id]);
             _accountCanvasIds[account.Id] = $"pie-{account.Id:N}";
         }
     }
@@ -301,7 +349,6 @@
             await CreateAccount();
     }
 
-
     private async Task SyncTest()
     {
         _isSyncing = true;
@@ -333,14 +380,14 @@
 
         try
         {
+            await JS.InvokeVoidAsync("categoryPieChart.unbindTableHover", _combinedTbodyId);
             await JS.InvokeVoidAsync("categoryPieChart.destroy", _combinedCanvasId);
             foreach (var canvasId in _accountCanvasIds.Values)
                 await JS.InvokeVoidAsync("categoryPieChart.destroy", canvasId);
         }
         catch (JSDisconnectedException)
         {
-    // Circuit disconnected before disposal — JS interop is no longer available.
+            // Circuit disconnected before disposal — JS interop is no longer available.
         }
     }
-
 }

@@ -54,4 +54,16 @@ public class AccountService
 
         return await connection.ExecuteScalarAsync<Guid>(sql, new { UserId = userId.Value, Name = accountName });
     }
+
+    public async Task RenameAccountAsync(Guid accountId, string newName)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            UPDATE lyra.accounts
+            SET name = @Name
+            WHERE id = @Id;";
+
+        await connection.ExecuteAsync(sql, new { Id = accountId, Name = newName });
+    }
 }

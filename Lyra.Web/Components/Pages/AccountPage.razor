@@ -16,6 +16,8 @@ else
 }
 
 @code {
+    public const string RouteTemplate = "/accounts/{0}";
+
     [Parameter] public Guid AccountId { get; set; }
 
     private Account? _account;

@@ -1,62 +1,57 @@
-@using Lyra.Core.EnableBanking.Models
+@using Lyra.Core.Models
 @using Lyra.Core.Services
 @using MudBlazor
 @inject EnableBankingService EnableBankingService
+@inject IDialogService DialogService
 
 <MudDialog>
     <DialogContent>
-        <MudSelect T="string?"
-                   Label="Balance Type for Sync"
-                   @bind-Value="_balanceType"
-                   Clearable="true"
-                   HelperText="Leave empty to disable balance sync">
-            @foreach (var type in _balanceTypes)
-            {
-                <MudSelectItem T="string?" Value="@type">@type</MudSelectItem>
-            }
-        </MudSelect>
+        <MudStack Spacing="3">
+            <MudSelect T="string"
+                       Label="Balance Type"
+                       @bind-Value="_balanceType"
+                       Clearable="true"
+                       HelperText="@(_availableBalanceTypes.Count == 0 ? "Sync the connection first to see available balance types." : null)">
+                @foreach (var type in _availableBalanceTypes)
+                {
+                    <MudSelectItem T="string" Value="@type">@type</MudSelectItem>
+                }
+            </MudSelect>
+        </MudStack>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancel</MudButton>
-        <MudButton Color="Color.Primary"
-                   Variant="Variant.Filled"
-                   OnClick="SaveAsync"
-                   Disabled="_saving">
-            @if (_saving)
-            {
-                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2"/>
-            }
-            Save
-        </MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
 @code {
-
     [CascadingParameter]
-    private IMudDialogInstance MudDialog { get; set; } = null!;
+    private IMudDialogInstance MudDialog { get; set; } = default!;
 
-    [Parameter, EditorRequired]
+    [Parameter]
     public Guid ConnectionId { get; set; }
 
     [Parameter]
     public string? BalanceType { get; set; }
 
-    private static readonly List<string> _balanceTypes = Enum.GetNames<BalanceStatus>().ToList();
+    [Parameter]
+    public List<string> AvailableBalanceTypes { get; set; } = new();
 
     private string? _balanceType;
-    private bool _saving;
+    private List<string> _availableBalanceTypes = new();
 
     protected override void OnParametersSet()
     {
         _balanceType = BalanceType;
+        _availableBalanceTypes = AvailableBalanceTypes.Count > 0
+            ? AvailableBalanceTypes
+            : new();
     }
 
     private async Task SaveAsync()
     {
-        _saving = true;
         await EnableBankingService.SetBalanceTypeAsync(ConnectionId, _balanceType);
-        _saving = false;
         MudDialog.Close(DialogResult.Ok(_balanceType));
     }
 

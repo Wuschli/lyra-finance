@@ -9,6 +9,7 @@
 @inject AccountService AccountService
 @inject NavigationManager NavigationManager
 @inject IDialogService DialogService
+@inject AccountNotificationService AccountNotificationService
 
 <PageTitle>External Connections</PageTitle>
 
@@ -109,8 +110,8 @@ else
                             <col style="width: 20%"/>
                             <col style="width: 20%"/>
                             <col style="width: 5%"/>
-                            <col style="width: 15%"/>
-                            <col style="width: 40%"/>
+                            <col style="width: 10%"/>
+                            <col style="width: 45%"/>
                         </ColGroup>
                         <HeaderContent>
                             <MudTh>External Account</MudTh>
@@ -137,7 +138,8 @@ else
                                 @if (context.LinkedAccountId.HasValue)
                                 {
                                     var localAccount = _localAccounts.FirstOrDefault(a => a.Id == context.LinkedAccountId.Value);
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.Link">
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Icon="@Icons.Material.Filled.Link"
+                                             Href="@(string.Format(AccountPage.RouteTemplate, context.LinkedAccountId.Value))">
                                         @(localAccount?.Name ?? context.LinkedAccountId.Value.ToString())
                                     </MudChip>
                                 }
@@ -151,17 +153,27 @@ else
                             <MudTd>
                                 @if (context.LinkedAccountId.HasValue)
                                 {
-                                    <MudButton Size="Size.Small"
-                                               Variant="Variant.Outlined"
-                                               StartIcon="@Icons.Material.Filled.LinkOff"
-                                               Color="Color.Error"
-                                               OnClick="@(() => UnlinkAccountAsync(context))">
-                                        Unlink
-                                    </MudButton>
+                                    var localAccount = _localAccounts.FirstOrDefault(a => a.Id == context.LinkedAccountId.Value);
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudButton Size="Size.Small"
+                                                   Variant="Variant.Outlined"
+                                                   StartIcon="@Icons.Material.Filled.Edit"
+                                                   Color="Color.Default"
+                                                   OnClick="@(() => RenameLocalAccountAsync(context.LinkedAccountId!.Value, localAccount?.Name ?? string.Empty))">
+                                            Rename Linked Account
+                                        </MudButton>
+                                        <MudButton Size="Size.Small"
+                                                   Variant="Variant.Outlined"
+                                                   StartIcon="@Icons.Material.Filled.LinkOff"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => UnlinkAccountAsync(context))">
+                                            Unlink
+                                        </MudButton>
+                                    </MudStack>
                                 }
                                 else
                                 {
-                                    <MudStack Row="true" Spacing="1">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                                         <MudButton Size="Size.Small"
                                                    Variant="Variant.Outlined"
                                                    StartIcon="@Icons.Material.Filled.AddCircle"
@@ -274,7 +286,8 @@ else
         var parameters = new DialogParameters<ConnectionSettingsDialog>
         {
             { x => x.ConnectionId, conn.Id },
-            { x => x.BalanceType, conn.BalanceType }
+            { x => x.BalanceType, conn.BalanceType },
+            { x => x.AvailableBalanceTypes, conn.AvailableBalanceTypes }
         };
         var dialog = await DialogService.ShowAsync<ConnectionSettingsDialog>($"Settings – {conn.ConnectionName}", parameters);
         await dialog.Result;
@@ -347,9 +360,38 @@ else
     private async Task CreateAndLinkAccountAsync(ExternalAccountWithLink extAccount)
     {
         var suggestedName = extAccount.Name ?? extAccount.Iban ?? extAccount.IdentificationHash;
-        var newAccountId = await AccountService.CreateAccountForCurrentUserAsync(suggestedName);
+
+        var parameters = new DialogParameters<RenameAccountDialog>
+        {
+            { x => x.InitialName, suggestedName }
+        };
+        var dialog = await DialogService.ShowAsync<RenameAccountDialog>("New Account Name", parameters);
+        var result = await dialog.Result;
+
+        if (result.Canceled || result.Data is not string chosenName)
+            return;
+
+        var newAccountId = await AccountService.CreateAccountForCurrentUserAsync(chosenName);
         await EnableBankingService.LinkExternalAccountAsync(extAccount.ExternalConnectionId, extAccount.IdentificationHash, newAccountId);
         await LoadDataAsync();
+        await AccountNotificationService.NotifyAccountsChangedAsync();
+    }
+
+    private async Task RenameLocalAccountAsync(Guid accountId, string currentName)
+    {
+        var parameters = new DialogParameters<RenameAccountDialog>
+        {
+            { x => x.InitialName, currentName }
+        };
+        var dialog = await DialogService.ShowAsync<RenameAccountDialog>("Rename Account", parameters);
+        var result = await dialog.Result;
+
+        if (result.Canceled || result.Data is not string newName)
+            return;
+
+        await AccountService.RenameAccountAsync(accountId, newName);
+        await LoadDataAsync();
+        await AccountNotificationService.NotifyAccountsChangedAsync();
     }
 
     private async Task OpenLinkDialogAsync(ExternalAccountWithLink extAccount)

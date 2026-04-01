@@ -2,6 +2,9 @@
 @using Lyra.Core.Services
 @using MudBlazor
 @inject AccountService AccountService
+@inject EnableBankingService EnableBankingService
+@inject AccountNotificationService AccountNotificationService
+@implements IAsyncDisposable
 
 <MudNavGroup Title="Accounts" Icon="@Icons.Material.Filled.AccountBalance" Expanded="true">
     @if (_accounts == null)
@@ -20,15 +23,25 @@
     {
         @foreach (var account in _accounts)
         {
+            var hasSyncFailure = _syncFailures.Contains(account.Id);
             <MudNavLink Href="@($"/accounts/{account.Id}")"
                         Icon="@Icons.Material.Filled.CreditCard">
-                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Style="width: 100%;">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="nav-account-row">
                     <span>@account.Name</span>
+                    @if (hasSyncFailure)
+                    {
+                        <MudTooltip Text="Last sync failed" Placement="Placement.Right">
+                            <MudIcon Icon="@Icons.Material.Filled.Error"
+                                     Color="Color.Error"
+                                     Size="Size.Small"
+                                     Class="nav-account-sync-error"/>
+                        </MudTooltip>
+                    }
                     @if (account.CurrentBalance.HasValue)
                     {
                         <MudText Typo="Typo.caption"
                                  Color="@(account.CurrentBalance >= 0 ? Color.Success : Color.Error)"
-                                 Style="margin-right: 12px;">
+                                 Class="nav-account-balance">
                             @account.CurrentBalance.Value.ToString("N2") €
                         </MudText>
                     }
@@ -38,19 +51,49 @@
     }
 </MudNavGroup>
 
+<style>
+    .nav-account-row {
+        width: 100%;
+    }
+
+    .nav-account-sync-error {
+        display: block;
+    }
+
+    .nav-account-balance {
+        margin-right: 12px;
+    }
+</style>
+
 @code {
-    private IEnumerable<Account>? _accounts;
+    private List<Account>? _accounts;
+    private HashSet<Guid> _syncFailures = new();
 
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
-            _accounts = await AccountService.GetAccountsForCurrentUserAsync();
-        }
-        catch (Exception)
-        {
-            _accounts = Enumerable.Empty<Account>();
-        }
+        AccountNotificationService.OnAccountsChanged += RefreshAccountsAsync;
+        await RefreshAccountsAsync();
+    }
+
+    private async Task RefreshAccountsAsync()
+    {
+        _accounts = (await AccountService.GetAccountsForCurrentUserAsync()).ToList();
+
+        var logTasks = _accounts.Select(a => EnableBankingService.GetLastSyncLogByAccountIdAsync(a.Id));
+        var logs = await Task.WhenAll(logTasks);
+
+        _syncFailures = _accounts
+            .Zip(logs, (account, log) => (account.Id, log))
+            .Where(x => x.log != null && x.log.Status != nameof(SyncStatus.Success))
+            .Select(x => x.Id)
+            .ToHashSet();
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        AccountNotificationService.OnAccountsChanged -= RefreshAccountsAsync;
     }
 
 }

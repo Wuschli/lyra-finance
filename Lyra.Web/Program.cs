@@ -71,7 +71,8 @@ public class Program
             .AddScoped<AccountService>()
             .AddScoped<EnableBankingService>()
             .AddSingleton<EnableBankingAccessTokenProvider>()
-            .AddScoped<TransactionRepository>();
+            .AddScoped<TransactionRepository>()
+            .AddScoped<AccountNotificationService>();
 
         builder.Services.AddTransient<IClaimsTransformation, UserClaimsTransformation>();
 

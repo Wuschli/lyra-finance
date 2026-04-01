@@ -15,14 +15,16 @@ public class EnableBankingService
     private readonly ApiClient _client;
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly UserService _userService;
+    private readonly AccountNotificationService _accountNotificationService;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
 
-    public EnableBankingService(ApiClient client, IDbConnectionFactory connectionFactory, UserService userService)
+    public EnableBankingService(ApiClient client, IDbConnectionFactory connectionFactory, UserService userService, AccountNotificationService accountNotificationService)
     {
         _client = client;
         _connectionFactory = connectionFactory;
         _userService = userService;
+        _accountNotificationService = accountNotificationService;
     }
 
 
@@ -140,6 +142,24 @@ public class EnableBankingService
     }
 
     /// <summary>
+    /// Persists the list of balance types observed during a sync so the UI can offer
+    /// only those types that the bank actually returns.
+    /// </summary>
+    public async Task SetAvailableBalanceTypesAsync(Guid externalConnectionId, IEnumerable<string> balanceTypes)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        var json = JsonSerializer.Serialize(balanceTypes.Distinct().OrderBy(x => x).ToList(), JsonOptions);
+
+        const string sql = @"
+            UPDATE external_connections
+            SET available_balance_types = @Json::jsonb
+            WHERE id = @Id";
+
+        await connection.ExecuteAsync(sql, new { Id = externalConnectionId, Json = json });
+    }
+
+    /// <summary>
     /// Returns all external connections belonging to the current user.
     /// </summary>
     public async Task<IEnumerable<ExternalConnection>> GetConnectionsForCurrentUserAsync()
@@ -148,7 +168,8 @@ public class EnableBankingService
         using var connection = await _connectionFactory.CreateConnectionAsync();
 
         const string sql = @"
-            SELECT *
+            SELECT *,
+                   available_balance_types AS available_balance_types_json
             FROM external_connections
             WHERE user_id = @UserId
             ORDER BY created_at ASC;";
@@ -334,7 +355,8 @@ public class EnableBankingService
         try
         {
             const string getExternalConnectionSql = @"
-                SELECT *
+                SELECT *,
+                       available_balance_types AS available_balance_types_json
                 FROM external_connections
                 WHERE id = @Id";
             var externalConnection = await connection.QueryFirstAsync<ExternalConnection>(getExternalConnectionSql, new { Id = externalConnectionId });
@@ -342,6 +364,9 @@ public class EnableBankingService
             var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
             var sessionDataResponse = await _client.Sessions[Guid.Parse(externalConnection.SessionId)].GetAsync();
             logBuilder.AppendLine($"SessionDataResponse: {JsonSerializer.Serialize(sessionDataResponse, jsonOptions)}");
+
+            // Collect all balance types seen across all accounts in this sync pass.
+            var discoveredBalanceTypes = new HashSet<string>();
 
             for (int i = 0; i < sessionDataResponse.AccountsData.Count; i++)
             {
@@ -380,6 +405,23 @@ public class EnableBankingService
                 var balance = await _client.Accounts[externalAccountId.Value].Balances.GetAsync();
                 logBuilder.AppendLine($"Account {accountId} Balance:\n{JsonSerializer.Serialize(balance, jsonOptions)}");
 
+                // Collect all balance types returned by the API for this account.
+                foreach (var balanceType in balance?.Balances?.Select(b => b.BalanceType?.ToString()).OfType<string>() ?? [])
+                discoveredBalanceTypes.Add(balanceType);
+
+                // On the first sync of a new connection (BalanceType not yet set), auto-select
+                // the first available balance type returned by the API.
+                if (externalConnection.BalanceType == null)
+                {
+                    var firstBalanceType = balance?.Balances?.FirstOrDefault()?.BalanceType?.ToString();
+                    if (firstBalanceType != null)
+                    {
+                        externalConnection.BalanceType = firstBalanceType;
+                        await SetBalanceTypeAsync(externalConnectionId, firstBalanceType);
+                        logBuilder.AppendLine($"Auto-selected balance type '{firstBalanceType}' for new connection {externalConnectionId}.");
+                    }
+                }
+
                 if (externalConnection.BalanceType != null)
                 {
                     await UpdateAccountBalance(accountId, balance, externalConnection.BalanceType, logBuilder);
@@ -390,6 +432,10 @@ public class EnableBankingService
 
                 await UpsertExternalTransactions(accountId, iban, transactions?.Transactions ?? Enumerable.Empty<EnableBanking.Models.Transaction>(), logBuilder);
             }
+
+            // Persist the union of all balance types discovered across all accounts.
+            if (discoveredBalanceTypes.Count > 0)
+                await SetAvailableBalanceTypesAsync(externalConnectionId, discoveredBalanceTypes);
 
             status = SyncStatus.Success;
         }
@@ -408,6 +454,8 @@ public class EnableBankingService
             await LogSyncResult(connection, externalConnectionId, status, logBuilder.ToString());
         }
 
+        await _accountNotificationService.NotifyAccountsChangedAsync();
+
         return status;
     }
 
@@ -416,7 +464,7 @@ public class EnableBankingService
         var match = halBalances?.Balances?.FirstOrDefault(b => b.BalanceType?.ToString() == balanceType);
         if (match == null)
         {
-            logBuilder.AppendLine($"Account {accountId}: No balance entry found for type '{balanceType}'. Available: {string.Join(", ", halBalances?.Balances?.Select(b => b.BalanceType?.ToString()) ?? [])}");
+            logBuilder.AppendLine($"Account {accountId}: No balance entry found for type '{balanceType}'. Available: {string.Join(", ", halBalances?.Balances?.Select(b => b.BalanceType?.ToString()) ??[])}");
             return;
         }
 
@@ -557,11 +605,32 @@ public class EnableBankingService
         using var connection = await _connectionFactory.CreateConnectionAsync();
 
         const string sql = @"
-            SELECT ec.*
-            FROM lyra.external_connections ec
-            JOIN lyra.external_connection_account eca ON eca.connection_id = ec.id
+            SELECT ec.*,
+                   ec.available_balance_types AS available_balance_types_json
+            FROM external_connections ec
+            JOIN external_connection_account eca ON eca.connection_id = ec.id
             WHERE eca.account_id = @AccountId";
 
         return await connection.QueryFirstOrDefaultAsync<ExternalConnection>(sql, new { AccountId = accountId });
+    }
+
+    /// <summary>
+    /// Returns the most recent sync log for the connection linked to the given local account,
+    /// or null if the account has no external connection or no sync has run yet.
+    /// </summary>
+    public async Task<SyncLog?> GetLastSyncLogByAccountIdAsync(Guid accountId)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            SELECT sl.*
+            FROM lyra.sync_logs sl
+            JOIN external_connections ec ON ec.id = sl.connection_id
+            JOIN external_connection_account eca ON eca.connection_id = ec.id
+            WHERE eca.account_id = @AccountId
+            ORDER BY sl.sync_end DESC NULLS LAST
+            LIMIT 1;";
+
+        return await connection.QueryFirstOrDefaultAsync<SyncLog>(sql, new { AccountId = accountId });
     }
 }

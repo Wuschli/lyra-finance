@@ -21,7 +21,23 @@ public class ExternalConnection
     // Which balance type to use when syncing (e.g. CLBD, ITAV). Null = skip balance sync.
     public string? BalanceType { get; set; }
 
+    // All balance types observed during the last sync, stored as a JSON array (e.g. ["CLBD","ITAV"]).
+    // Used to populate the options in the connection settings UI.
+    public string? AvailableBalanceTypesJson { get; set; }
+
     // Provider-specific data stored as JSON (e.g. ASPSP for Enable Banking),
     // used to re-initiate authorization when the session expires.
     public string? ProviderData { get; set; }
+
+    // Deserialized view of AvailableBalanceTypesJson — not mapped by Dapper.
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public List<string> AvailableBalanceTypes
+    {
+        get
+        {
+            if (AvailableBalanceTypesJson == null)
+                return new List<string>();
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(AvailableBalanceTypesJson) ?? new List<string>();
+        }
+    }
 }
