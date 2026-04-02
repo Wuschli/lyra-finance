@@ -196,12 +196,23 @@ else
         </MudCard>
     }
 
-    <MudButton Variant="Variant.Filled"
-               Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add"
-               OnClick="AddBankAsync">
-        Add Bank
-    </MudButton>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddBankAsync">
+            Add Bank
+        </MudButton>
+        @if (_connections.Count > 0)
+        {
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Filled.FindReplace"
+                       OnClick="OpenRehashDialogAsync">
+                Scan for Duplicate Transactions
+            </MudButton>
+        }
+    </MudStack>
 }
 
 @code {
@@ -279,7 +290,6 @@ else
         conn.ConnectionName = newName;
         await EnableBankingService.UpdateConnectionNameAsync(conn.Id, newName);
     }
-
 
     private async Task OpenConnectionSettingsDialogAsync(ExternalConnection conn)
     {
@@ -440,4 +450,17 @@ else
         }
     }
 
+    private async Task OpenRehashDialogAsync()
+    {
+        var parameters = new DialogParameters<RehashTransactionsDialog>
+        {
+            { x => x.ConnectionIds, _connections.Select(c => c.Id).ToList() }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<RehashTransactionsDialog>("Scan for Duplicate Transactions", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: true })
+            await LoadDataAsync();
+    }
 }

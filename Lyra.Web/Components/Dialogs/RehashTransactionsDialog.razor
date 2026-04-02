@@ -1,0 +1,317 @@
+@using Lyra.Core.Models
+@using Lyra.Core.Services
+@using MudBlazor
+@inject EnableBankingService EnableBankingService
+@implements IDisposable
+
+<MudDialog Style="height: calc(100% - 64px);">
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mb-4"/>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@_loadingMessage</MudText>
+        }
+        else if (_errorMessage != null)
+        {
+            <MudAlert Severity="Severity.Error">
+                An error occurred: <strong>@_errorMessage</strong>
+            </MudAlert>
+        }
+        else if (_duplicateGroups.Count == 0)
+        {
+            <MudAlert Severity="Severity.Success">
+                No duplicates found. All transaction hashes are unique.
+            </MudAlert>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-4">
+                Found <strong>@_duplicateGroups.Count</strong> duplicate group(s) across <strong>@_duplicateGroups.Sum(g => g.Duplicates.Count)</strong> transactions.
+                Review each group and delete the unwanted entry.
+            </MudAlert>
+
+            @foreach (var group in _duplicateGroups)
+            {
+                <MudCard Class="mb-4" Outlined="true">
+                    <MudCardContent>
+                        <MudTable Items="group.Duplicates" Dense="true" Hover="true" Elevation="0">
+                            <ColGroup>
+                                <col style="width: 15%"/>
+                                <col style="width: 20%"/>
+                                <col style="width: 25%"/>
+                                <col style="width: 15%"/>
+                                <col style="width: 10%"/>
+                                <col style="width: 15%"/>
+                            </ColGroup>
+                            <HeaderContent>
+                                <MudTh>Transaction Date</MudTh>
+                                <MudTh>Booking Date</MudTh>
+                                <MudTh>Description</MudTh>
+                                <MudTh>Counterparty</MudTh>
+                                <MudTh>Amount</MudTh>
+                                <MudTh>Action</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>
+                                    <MudText Typo="Typo.body2">@context.TransactionDate.ToString("dd.MM.yyyy")</MudText>
+                                </MudTd>
+                                <MudTd>
+                                    <MudText Typo="Typo.body2">@(context.BookingDate?.ToString("dd.MM.yyyy") ?? "—")</MudText>
+                                </MudTd>
+                                <MudTd>
+                                    <MudText Typo="Typo.body2">@(context.Description ?? "—")</MudText>
+                                </MudTd>
+                                <MudTd>
+                                    <MudText Typo="Typo.body2">@context.CounterpartyName</MudText>
+                                    @if (!string.IsNullOrEmpty(context.CounterpartyIban))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.CounterpartyIban</MudText>
+                                    }
+                                </MudTd>
+                                <MudTd>
+                                    <MudText Typo="Typo.body2"
+                                             Color="@(context.Amount < 0 ? Color.Error : Color.Success)">
+                                        @context.Amount.ToString("N2")
+                                    </MudText>
+                                </MudTd>
+                                <MudTd>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                   Color="Color.Error"
+                                                   Size="Size.Small"
+                                                   Disabled="@(_deleting.Contains(context.Id))"
+                                                   OnClick="@(() => DeleteTransactionAsync(context, group))"/>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudCardContent>
+                </MudCard>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (!_loading)
+        {
+            <MudButton Color="Color.Info"
+                       Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="RehashAndRescanAsync"
+                       title="Recompute all transaction hashes to the current algorithm, then rescan for duplicates.">
+                Rehash &amp; Rescan
+            </MudButton>
+        }
+        @if (!_loading && _duplicateGroups.Count > 0)
+        {
+            <MudButton Color="Color.Warning"
+                       Variant="Variant.Outlined"
+                       StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                       Disabled="@_autoResolving"
+                       OnClick="AutoResolveAsync">
+                Auto-resolve (keep newest)
+            </MudButton>
+        }
+        <MudButton OnClick="@(() => MudDialog.Close(_changed))">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public List<Guid> ConnectionIds { get; set; } = new();
+
+    private bool _loading = true;
+    private bool _changed;
+    private bool _autoResolving;
+    private bool _disposed;
+    private string _loadingMessage = "Scanning transactions and computing new hashes…";
+    private List<DuplicateTransactionGroup> _duplicateGroups = new();
+    private HashSet<Guid> _deleting = new();
+    private readonly CancellationTokenSource _cts = new();
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ScanAsync();
+    }
+
+    private void SafeStateHasChanged()
+    {
+        if (!_disposed)
+            StateHasChanged();
+    }
+
+    private async Task ScanAsync()
+    {
+        if (_disposed || _cts.IsCancellationRequested) return;
+
+        _loading = true;
+        _errorMessage = null;
+        _loadingMessage = "Scanning transactions and computing new hashes…";
+        _duplicateGroups = new();
+        SafeStateHasChanged();
+
+        try
+        {
+            var allTransactions = new List<TransactionWithExternalIdentifier>();
+            foreach (var connectionId in ConnectionIds)
+            {
+                if (_disposed || _cts.IsCancellationRequested) return;
+                var transactions = await EnableBankingService.GetTransactionsForRehashAsync(connectionId);
+                allTransactions.AddRange(transactions);
+            }
+
+            if (_disposed || _cts.IsCancellationRequested) return;
+
+            _duplicateGroups = allTransactions
+                .GroupBy(t => TransactionWithExternalIdentifier.ComputeHash(
+                    t.AccountId,
+                    creditDebitIndicator: t.Amount < 0 ? "DBIT" : "CRDT",
+                    amount: Math.Abs(t.Amount).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    currency: t.Currency,
+                    counterpartyName: t.CounterpartyName,
+                    counterpartyIban: t.CounterpartyIban,
+                    remittanceInformation: t.Description ?? string.Empty
+                ))
+                .Where(g => g.Count() > 1)
+                .Where(g =>
+                {
+                    var dates = g.Select(t => t.TransactionDate).OrderBy(d => d).ToList();
+                    return (dates.Last() - dates.First()).Duration() <= TimeSpan.FromDays(3);
+                })
+                .Select(g => new DuplicateTransactionGroup
+                {
+                    GroupKey = g.Key,
+                    Duplicates = g.OrderBy(t => t.TransactionDate).ToList()
+                })
+                .ToList();
+        }
+        catch (Exception ex) when (!_disposed && !_cts.IsCancellationRequested)
+        {
+            _errorMessage = ex.Message;
+        }
+        catch (Exception)
+        {
+            // Disposed or cancelled — silent abort.
+        }
+        finally
+        {
+            if (!_disposed && !_cts.IsCancellationRequested)
+            {
+                _loading = false;
+                SafeStateHasChanged();
+            }
+        }
+    }
+
+    private async Task RehashAndRescanAsync()
+    {
+        if (_disposed || _cts.IsCancellationRequested) return;
+
+        _loading = true;
+        _errorMessage = null;
+        _loadingMessage = "Recomputing transaction hashes…";
+        SafeStateHasChanged();
+
+        try
+        {
+            var totalUpdated = 0;
+            foreach (var connectionId in ConnectionIds)
+            {
+                if (_disposed || _cts.IsCancellationRequested) return;
+                totalUpdated += await EnableBankingService.RehashTransactionsForConnectionAsync(connectionId);
+            }
+
+            if (_disposed || _cts.IsCancellationRequested) return;
+
+            _changed = totalUpdated > 0;
+            _loadingMessage = $"Rehashed {totalUpdated} transaction(s). Rescanning…";
+            SafeStateHasChanged();
+
+            await ScanAsync();
+        }
+        catch (Exception ex) when (!_disposed && !_cts.IsCancellationRequested)
+        {
+            _errorMessage = ex.Message;
+            _loading = false;
+            SafeStateHasChanged();
+        }
+        catch (Exception)
+        {
+            // Disposed or cancelled — silent abort.
+        }
+    }
+
+    private async Task DeleteTransactionAsync(TransactionWithExternalIdentifier transaction, DuplicateTransactionGroup group)
+    {
+        if (_disposed || _cts.IsCancellationRequested) return;
+
+        _deleting.Add(transaction.Id);
+        SafeStateHasChanged();
+
+        try
+        {
+            await EnableBankingService.DeleteTransactionAsync(transaction.Id);
+
+            if (_disposed || _cts.IsCancellationRequested) return;
+
+            group.Duplicates.Remove(transaction);
+            if (group.Duplicates.Count <= 1)
+                _duplicateGroups.Remove(group);
+
+            _deleting.Remove(transaction.Id);
+            _changed = true;
+        }
+        catch (Exception) when (_disposed || _cts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        SafeStateHasChanged();
+    }
+
+    private async Task AutoResolveAsync()
+    {
+        if (_disposed || _cts.IsCancellationRequested) return;
+
+        _autoResolving = true;
+        SafeStateHasChanged();
+
+        try
+        {
+            foreach (var group in _duplicateGroups.ToList())
+            {
+                var toDelete = group.Duplicates
+                    .OrderByDescending(t => t.TransactionDate)
+                    .Skip(1)
+                    .ToList();
+
+                foreach (var t in toDelete)
+                {
+                    if (_disposed || _cts.IsCancellationRequested) return;
+                    await EnableBankingService.DeleteTransactionAsync(t.Id);
+                    group.Duplicates.Remove(t);
+                }
+            }
+
+            if (_disposed || _cts.IsCancellationRequested) return;
+
+            _duplicateGroups.RemoveAll(g => g.Duplicates.Count <= 1);
+            _changed = true;
+            _autoResolving = false;
+        }
+        catch (Exception) when (_disposed || _cts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        SafeStateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

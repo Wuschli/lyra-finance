@@ -3,3 +3,6 @@ ALTER TABLE external_connection_account
 
 ALTER TABLE external_connections
     ADD COLUMN IF NOT EXISTS available_balance_types jsonb NULL;
+
+ALTER TABLE lyra.transactions
+    ADD COLUMN IF NOT EXISTS currency VARCHAR(10) NOT NULL DEFAULT '';

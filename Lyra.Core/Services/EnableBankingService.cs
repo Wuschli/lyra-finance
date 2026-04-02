@@ -568,24 +568,41 @@ public class EnableBankingService
         logBuilder.AppendLine($"Account {accountId}: Updated balance to {amount} {match.BalanceAmount?.Currency} (type: {balanceType}).");
     }
 
-    private static string GenerateTransactionHash(EnableBanking.Models.Transaction transaction, Guid accountId)
+    /// <summary>
+    /// Returns all transactions for all accounts linked to the given connection,
+    /// including their external_identifier for rehashing.
+    /// </summary>
+    public async Task<IEnumerable<TransactionWithExternalIdentifier>> GetTransactionsForRehashAsync(Guid externalConnectionId)
     {
-        // Combine immutable fields into a unique hash
-        var hashInput = string.Concat(
-            accountId,
-            transaction.BookingDate?.ToString() ?? string.Empty,
-            transaction.TransactionDate?.ToString() ?? string.Empty,
-            transaction.CreditDebitIndicator?.ToString() ?? string.Empty,
-            transaction.TransactionAmount?.Amount ?? string.Empty,
-            transaction.TransactionAmount?.Currency ?? string.Empty,
-            (transaction.Debtor?.Name ?? string.Empty).Trim(),
-            (transaction.Creditor?.Name ?? string.Empty).Trim(),
-            string.Join("|", transaction.RemittanceInformation ?? new List<string>())
-        );
+        using var connection = await _connectionFactory.CreateConnectionAsync();
 
-        using var sha256 = SHA256.Create();
-        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(hashInput));
-        return Convert.ToHexString(hashedBytes);
+        const string sql = @"
+            SELECT t.id, t.account_id, t.counterparty_name, t.counterparty_iban, t.description,
+                   t.amount, t.currency, t.transaction_date, t.booking_date, t.value_date, t.category,
+                   t.external_identifier
+            FROM lyra.transactions t
+            JOIN external_connection_account eca ON eca.account_id = t.account_id
+            WHERE eca.connection_id = @ConnectionId
+            ORDER BY t.transaction_date DESC;";
+
+        return await connection.QueryAsync<TransactionWithExternalIdentifier>(sql, new { ConnectionId = externalConnectionId });
+    }
+
+    private static string GenerateTransactionHash(
+        EnableBanking.Models.Transaction transaction,
+        Guid accountId,
+        string counterpartyName,
+        string counterpartyIban)
+    {
+        return TransactionWithExternalIdentifier.ComputeHash(
+            accountId,
+            creditDebitIndicator: transaction.CreditDebitIndicator?.ToString() ?? string.Empty,
+            amount: transaction.TransactionAmount?.Amount ?? string.Empty,
+            currency: transaction.TransactionAmount?.Currency ?? string.Empty,
+            counterpartyName: counterpartyName,
+            counterpartyIban: counterpartyIban,
+            remittanceInformation: string.Join("|", transaction.RemittanceInformation ?? new List<string>())
+        );
     }
 
     private async Task UpsertExternalTransactions(Guid accountId,
@@ -604,15 +621,16 @@ public class EnableBankingService
 
         const string sql = @"
             INSERT INTO lyra.transactions
-                (account_id, counterparty_name, counterparty_iban, description, amount, transaction_date, booking_date, value_date, external_identifier)
+                (account_id, counterparty_name, counterparty_iban, description, amount, currency, transaction_date, booking_date, value_date, external_identifier)
             VALUES
-                (@AccountId, @CounterpartyName, @CounterpartyIban, @Description, @Amount, @TransactionDate, @BookingDate, @ValueDate, @ExternalIdentifier)
+                (@AccountId, @CounterpartyName, @CounterpartyIban, @Description, @Amount, @Currency, @TransactionDate, @BookingDate, @ValueDate, @ExternalIdentifier)
             ON CONFLICT (account_id, external_identifier)
             DO UPDATE SET
                 counterparty_name = EXCLUDED.counterparty_name,
                 counterparty_iban = EXCLUDED.counterparty_iban,
                 description = EXCLUDED.description,
                 amount = EXCLUDED.amount,
+                currency = EXCLUDED.currency,
                 transaction_date = EXCLUDED.transaction_date,
                 booking_date = EXCLUDED.booking_date,
                 value_date = EXCLUDED.value_date;";
@@ -620,6 +638,7 @@ public class EnableBankingService
         var parameters = transactionList.Select(transaction =>
         {
             var transactionDate = transaction.TransactionDate.ToDateTimeOrNull() ?? transaction.BookingDate.ToDateTimeOrNull() ?? DateTime.MinValue;
+            var currency = transaction.TransactionAmount?.Currency ?? string.Empty;
 
             var counterpartyName = transaction.Creditor?.Name ?? transaction.CreditorAgent?.Name ?? string.Empty;
             var counterpartyIban = transaction.CreditorAccount?.Iban ?? string.Empty;
@@ -646,10 +665,11 @@ public class EnableBankingService
                 CounterpartyIban = counterpartyIban,
                 Description = string.Join("; ", transaction.RemittanceInformation ?? new List<string>()),
                 Amount = amount,
+                Currency = currency,
                 TransactionDate = transactionDate,
                 BookingDate = transaction.BookingDate.ToDateTimeOrNull(),
                 ValueDate = transaction.ValueDate.ToDateTimeOrNull(),
-                ExternalIdentifier = GenerateTransactionHash(transaction, accountId)
+                ExternalIdentifier = GenerateTransactionHash(transaction, accountId, counterpartyName, counterpartyIban)
             };
         }).ToList();
 
@@ -657,23 +677,73 @@ public class EnableBankingService
         logBuilder.AppendLine($"Account {accountId}: Upserted {transactionList.Count} transactions.");
     }
 
-    private async Task LogSyncResult(
-        IDbConnection connection,
-        Guid connectionId,
-        SyncStatus status,
-        string message)
+    /// <summary>
+    /// Recomputes the external_identifier for all transactions linked to the given connection
+    /// and updates rows whose stored hash differs from the current algorithm.
+    /// If two rows would get the same new hash (duplicate), the older one is deleted.
+    /// Returns the number of updated/deleted rows.
+    /// </summary>
+    public async Task<int> RehashTransactionsForConnectionAsync(Guid externalConnectionId)
     {
-        const string logSql = @"
-            INSERT INTO sync_logs (connection_id, status, message, sync_end)
-            VALUES (@ConnectionId, @Status, @Message, @SyncEnd);";
+        using var connection = await _connectionFactory.CreateConnectionAsync();
 
-        await connection.ExecuteAsync(logSql, new
+        const string fetchSql = @"
+            SELECT t.id, t.account_id, t.counterparty_name, t.counterparty_iban,
+                   t.amount, t.currency, t.description, t.external_identifier,
+                   t.transaction_date
+            FROM lyra.transactions t
+            JOIN external_connection_account eca ON eca.account_id = t.account_id
+            WHERE eca.connection_id = @ConnectionId;";
+
+        var rows = (await connection.QueryAsync<(Guid Id, Guid AccountId, string CounterpartyName, string CounterpartyIban, decimal Amount, string Currency, string? Description, string? ExternalIdentifier, DateTimeOffset TransactionDate)>(
+            fetchSql, new { ConnectionId = externalConnectionId })).ToList();
+
+        // Compute new hash for every row, then group to find collisions.
+        var withNewHash = rows.Select(row => (
+            row.Id,
+            row.AccountId,
+            row.TransactionDate,
+            OldHash: row.ExternalIdentifier,
+            NewHash: TransactionWithExternalIdentifier.ComputeHash(
+                row.AccountId,
+                creditDebitIndicator: row.Amount < 0 ? "DBIT" : "CRDT",
+                amount: Math.Abs(row.Amount).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                currency: row.Currency,
+                counterpartyName: row.CounterpartyName,
+                counterpartyIban: row.CounterpartyIban,
+                remittanceInformation: row.Description ?? string.Empty
+            )
+        )).ToList();
+
+        // Within each (account, new hash) group keep the newest row, delete the rest.
+        var toDelete = withNewHash
+            .GroupBy(r => (r.AccountId, r.NewHash))
+            .Where(g => g.Count() > 1)
+            .SelectMany(g => g.OrderByDescending(r => r.TransactionDate).Skip(1))
+            .Select(r => r.Id)
+            .ToHashSet();
+
+        const string deleteSql = @"DELETE FROM lyra.transactions WHERE id = @Id;";
+        foreach (var id in toDelete)
+            await connection.ExecuteAsync(deleteSql, new { Id = id });
+
+        // Now update hashes for remaining rows that actually changed.
+        const string updateSql = @"
+            UPDATE lyra.transactions
+            SET external_identifier = @NewHash
+            WHERE id = @Id;";
+
+        var updated = 0;
+        foreach (var row in withNewHash.Where(r => !toDelete.Contains(r.Id)))
         {
-            ConnectionId = connectionId,
-            Status = status.ToString(),
-            Message = message,
-            SyncEnd = DateTimeOffset.Now
-        });
+            if (string.Equals(row.OldHash, row.NewHash, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            await connection.ExecuteAsync(updateSql, new { Id = row.Id, NewHash = row.NewHash });
+            updated++;
+        }
+
+        return updated + toDelete.Count;
     }
 
     public async Task<ExternalConnection?> GetExternalConnectionByAccountIdAsync(Guid accountId)
@@ -745,5 +815,19 @@ public class EnableBankingService
             WHERE id = @Id AND user_id = @UserId";
 
         await connection.ExecuteAsync(clearSql, new { Id = externalConnectionId, UserId = userId });
+    }
+
+    /// <summary>
+    /// Deletes a transaction by its ID.
+    /// </summary>
+    public async Task DeleteTransactionAsync(Guid transactionId)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            DELETE FROM lyra.transactions
+            WHERE id = @Id;";
+
+        await connection.ExecuteAsync(sql, new { Id = transactionId });
     }
 }

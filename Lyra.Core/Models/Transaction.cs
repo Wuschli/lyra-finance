@@ -8,6 +8,7 @@ public class Transaction
     public string CounterpartyIban { get; set; } = string.Empty;
     public string? Description { get; set; }
     public decimal Amount { get; set; }
+    public string Currency { get; set; } = string.Empty;
     public DateTimeOffset TransactionDate { get; set; }
     public DateTimeOffset? BookingDate { get; set; }
     public DateTimeOffset? ValueDate { get; set; }
