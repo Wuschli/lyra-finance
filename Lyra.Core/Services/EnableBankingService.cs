@@ -32,7 +32,7 @@ public class EnableBankingService
     /// Starts the user authorization flow (POST /sessions).
     /// Persists the ASPSP as provider_data JSON so the session can be re-authorized later.
     /// </summary>
-    public async Task<StartAuthorizationResponse?> StartAuthorizationAsync(Guid externalConnectionId, ASPSP aspsp)
+    public async Task<AuthorizationResult> StartAuthorizationAsync(Guid externalConnectionId, ASPSP aspsp)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
 
@@ -67,14 +67,16 @@ public class EnableBankingService
         };
 
         var authResponse = await _client.Auth.PostAsync(authRequest);
-        return authResponse;
+        return authResponse?.Url != null
+            ? AuthorizationResult.Success(authResponse.Url)
+            : AuthorizationResult.Failed();
     }
 
     /// <summary>
     /// Re-initiates the authorization flow for an existing connection whose session has expired,
     /// using the ASPSP data that was stored when the connection was first created.
     /// </summary>
-    public async Task<StartAuthorizationResponse?> ReauthorizeAsync(Guid externalConnectionId)
+    public async Task<AuthorizationResult> ReauthorizeAsync(Guid externalConnectionId)
     {
         var userId = await _userService.GetCurrentUserId();
         using var connection = await _connectionFactory.CreateConnectionAsync();
@@ -346,11 +348,14 @@ public class EnableBankingService
         }
     }
 
-    public async Task<SyncStatus> SyncExternalConnection(Guid externalConnectionId)
+    public async Task<SyncResult> SyncExternalConnection(Guid externalConnectionId)
     {
         using var connection = await _connectionFactory.CreateConnectionAsync();
         var logBuilder = new StringBuilder();
         var status = SyncStatus.InProgress;
+
+        var syncLogId = await CreateSyncLogAsync(connection, externalConnectionId);
+        SyncRequestLoggingHandler.SetLogAction(message => logBuilder.AppendLine(message));
 
         try
         {
@@ -361,9 +366,20 @@ public class EnableBankingService
                 WHERE id = @Id";
             var externalConnection = await connection.QueryFirstAsync<ExternalConnection>(getExternalConnectionSql, new { Id = externalConnectionId });
 
-            var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+            if (string.IsNullOrEmpty(externalConnection.SessionId))
+            {
+                var result = await ReauthorizeAsync(externalConnectionId);
+                if (result.IsSuccess)
+                {
+                    logBuilder.AppendLine($"No active session — re-authorization required. URL: {result.RedirectUrl}");
+                    status = SyncStatus.SessionExpired;
+                    return SyncResult.NeedsReauthorization(result.RedirectUrl!);
+                }
+
+                throw new InvalidOperationException("Re-authorization response contained no redirect URL.");
+            }
+
             var sessionDataResponse = await _client.Sessions[Guid.Parse(externalConnection.SessionId)].GetAsync();
-            logBuilder.AppendLine($"SessionDataResponse: {JsonSerializer.Serialize(sessionDataResponse, jsonOptions)}");
 
             // Collect all balance types seen across all accounts in this sync pass.
             var discoveredBalanceTypes = new HashSet<string>();
@@ -402,10 +418,9 @@ public class EnableBankingService
                     }
 
                     var accountId = result.AccountId.Value;
-                    var iban = result.Iban ?? string.Empty;
+                    var iban = result.Iban;
 
                     var balance = await _client.Accounts[externalAccountId.Value].Balances.GetAsync();
-                    logBuilder.AppendLine($"Account {accountId} Balance:\n{JsonSerializer.Serialize(balance, jsonOptions)}");
 
                     // Collect all balance types returned by the API for this account.
                     foreach (var balanceType in balance?.Balances?.Select(b => b.BalanceType?.ToString()).OfType<string>() ?? [])
@@ -430,7 +445,6 @@ public class EnableBankingService
                     }
 
                     var transactions = await _client.Accounts[externalAccountId.Value].Transactions.GetAsync();
-                    logBuilder.AppendLine($"Account {accountId} Transactions:\n{JsonSerializer.Serialize(transactions, jsonOptions)}");
 
                     await UpsertExternalTransactions(accountId, iban, transactions?.Transactions ?? Enumerable.Empty<EnableBanking.Models.Transaction>(), logBuilder);
                 }
@@ -450,12 +464,24 @@ public class EnableBankingService
             if (discoveredBalanceTypes.Count > 0)
                 await SetAvailableBalanceTypesAsync(externalConnectionId, discoveredBalanceTypes);
 
-            status = SyncStatus.Success;
+            if (status == SyncStatus.InProgress)
+                status = SyncStatus.Success;
         }
         catch (ErrorResponse ex) when (ex.Error is ErrorCode.EXPIRED_SESSION or ErrorCode.CLOSED_SESSION or ErrorCode.REVOKED_SESSION)
         {
             status = SyncStatus.SessionExpired;
             logBuilder.AppendLine($"Session expired (code: {ex.Error}): {ex.Message}");
+
+            var reauthorizeResult = await ReauthorizeAsync(externalConnectionId);
+            if (reauthorizeResult.IsSuccess)
+                logBuilder.AppendLine($"Re-authorization initiated. URL: {reauthorizeResult.RedirectUrl}");
+
+            await FinalizeSyncLogAsync(connection, syncLogId, status, logBuilder.ToString());
+            await _accountNotificationService.NotifyAccountsChangedAsync();
+
+            return reauthorizeResult.IsSuccess
+                ? SyncResult.NeedsReauthorization(reauthorizeResult.RedirectUrl!)
+                : SyncResult.Failure();
         }
         catch (Exception ex)
         {
@@ -464,12 +490,49 @@ public class EnableBankingService
         }
         finally
         {
-            await LogSyncResult(connection, externalConnectionId, status, logBuilder.ToString());
+            await FinalizeSyncLogAsync(connection, syncLogId, status, logBuilder.ToString());
         }
 
         await _accountNotificationService.NotifyAccountsChangedAsync();
 
-        return status;
+        return status == SyncStatus.Success ? SyncResult.Success() : SyncResult.Failure();
+    }
+
+    private async Task<Guid> CreateSyncLogAsync(IDbConnection connection, Guid connectionId)
+    {
+        const string sql = @"
+            INSERT INTO sync_logs (connection_id, status, sync_start)
+            VALUES (@ConnectionId, @Status, @SyncStart)
+            RETURNING id;";
+
+        return await connection.ExecuteScalarAsync<Guid>(sql, new
+        {
+            ConnectionId = connectionId,
+            Status = SyncStatus.InProgress.ToString(),
+            SyncStart = DateTimeOffset.Now
+        });
+    }
+
+    private async Task FinalizeSyncLogAsync(
+        IDbConnection connection,
+        Guid syncLogId,
+        SyncStatus status,
+        string message)
+    {
+        const string sql = @"
+            UPDATE sync_logs
+            SET status = @Status,
+                message = @Message,
+                sync_end = @SyncEnd
+            WHERE id = @Id;";
+
+        await connection.ExecuteAsync(sql, new
+        {
+            Id = syncLogId,
+            Status = status.ToString(),
+            Message = message,
+            SyncEnd = DateTimeOffset.Now
+        });
     }
 
     private async Task UpdateAccountBalance(Guid accountId, HalBalances? halBalances, string balanceType, StringBuilder logBuilder)
@@ -601,7 +664,7 @@ public class EnableBankingService
         string message)
     {
         const string logSql = @"
-            INSERT INTO lyra.sync_logs (connection_id, status, message, sync_end)
+            INSERT INTO sync_logs (connection_id, status, message, sync_end)
             VALUES (@ConnectionId, @Status, @Message, @SyncEnd);";
 
         await connection.ExecuteAsync(logSql, new
@@ -645,5 +708,42 @@ public class EnableBankingService
             LIMIT 1;";
 
         return await connection.QueryFirstOrDefaultAsync<SyncLog>(sql, new { AccountId = accountId });
+    }
+
+    /// <summary>
+    /// Deletes the EnableBanking session for the given connection (revokes bank consent)
+    /// and clears the stored session data locally so the user is prompted to re-authorize.
+    /// </summary>
+    public async Task DeleteSessionAsync(Guid externalConnectionId)
+    {
+        var userId = await _userService.GetCurrentUserId();
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string getSessionSql = @"
+            SELECT session_id
+            FROM external_connections
+            WHERE id = @Id AND user_id = @UserId";
+
+        var sessionId = await connection.QueryFirstOrDefaultAsync<string?>(getSessionSql, new { Id = externalConnectionId, UserId = userId });
+
+        if (!string.IsNullOrEmpty(sessionId) && Guid.TryParse(sessionId, out var sessionGuid))
+        {
+            try
+            {
+                await _client.Sessions[sessionGuid].DeleteAsync();
+            }
+            catch (ErrorResponse)
+            {
+                // Session may already be gone on the EnableBanking side — ignore and clear locally.
+            }
+        }
+
+        const string clearSql = @"
+            UPDATE external_connections
+            SET session_id = NULL,
+                expires_at = NULL
+            WHERE id = @Id AND user_id = @UserId";
+
+        await connection.ExecuteAsync(clearSql, new { Id = externalConnectionId, UserId = userId });
     }
 }

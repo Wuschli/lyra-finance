@@ -2,6 +2,7 @@ using ApexCharts;
 using DbUp;
 using Lyra.Core;
 using Lyra.Core.Auth;
+using Lyra.Core.EnableBanking;
 using Lyra.Core.Services;
 using Lyra.Web.Components;
 using Microsoft.AspNetCore.Authentication;
@@ -76,12 +77,16 @@ public class Program
 
         builder.Services.AddTransient<IClaimsTransformation, UserClaimsTransformation>();
 
+        builder.Services.AddSingleton<SyncRequestLoggingHandler>();
+
         builder.Services.AddScoped(sp =>
         {
             var tokenProvider = sp.GetRequiredService<EnableBankingAccessTokenProvider>();
             var authProvider = new BaseBearerTokenAuthenticationProvider(tokenProvider);
-            var adapter = new HttpClientRequestAdapter(authProvider);
-            return new Core.EnableBanking.ApiClient(adapter);
+            var loggingHandler = sp.GetRequiredService<SyncRequestLoggingHandler>();
+            var httpClient = new HttpClient(loggingHandler);
+            var adapter = new HttpClientRequestAdapter(authProvider, httpClient: httpClient);
+            return new ApiClient(adapter);
         });
 
         builder.Services.AddRazorComponents()

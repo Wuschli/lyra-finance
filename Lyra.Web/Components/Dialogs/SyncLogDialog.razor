@@ -3,7 +3,7 @@
 @using MudBlazor
 @inject EnableBankingService EnableBankingService
 
-<MudDialog>
+<MudDialog Style="height: calc(100% - 64px);">
     <DialogContent>
         @if (_loading)
         {
@@ -32,7 +32,7 @@
 
             @if (_selectedLog is not null)
             {
-                <MudPaper Outlined="true" Class="pa-4">
+                <MudPaper Outlined="true" Class="pa-4" Style="display: flex; flex-direction: column; max-height: calc(100% - 80px);">
                     <MudStack Spacing="3">
                         <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
                             <MudText Typo="Typo.subtitle2" Color="Color.Tertiary">Started</MudText>
@@ -58,17 +58,19 @@
                                 @_selectedLog.Status
                             </MudChip>
                         </MudStack>
+                    </MudStack>
 
-                        @if (!string.IsNullOrWhiteSpace(_selectedLog.Message))
-                        {
-                            <MudDivider/>
-                            <MudText Typo="Typo.subtitle2" Color="Color.Tertiary">Message</MudText>
+                    @if (!string.IsNullOrWhiteSpace(_selectedLog.Message))
+                    {
+                        <MudDivider Class="my-3"/>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Tertiary" Class="mb-1">Message</MudText>
+                        <div style="overflow-y: auto; flex: 1; min-height: 0;">
                             <MudText Typo="Typo.caption"
                                      Style="white-space: pre-wrap; word-break: break-word; font-family: monospace;">
                                 @_selectedLog.Message
                             </MudText>
-                        }
-                    </MudStack>
+                        </div>
+                    }
                 </MudPaper>
             }
         }

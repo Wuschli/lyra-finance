@@ -12,7 +12,7 @@ public class ExternalConnection
     public string ConnectionName { get; set; } = string.Empty;
 
     // The session or consent ID returned by the provider
-    public string SessionId { get; set; } = string.Empty;
+    public string? SessionId { get; set; } = string.Empty;
 
     // Timestamp when the current access token or consent expires
     public DateTimeOffset? ExpiresAt { get; set; }

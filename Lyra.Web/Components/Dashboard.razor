@@ -69,36 +69,6 @@
 
         <MudDivider Class="my-4"/>
 
-        <MudStack Row="true" Spacing="2">
-            <MudButton Variant="Variant.Outlined"
-                       Color="Color.Secondary"
-                       StartIcon="@Icons.Material.Filled.Sync"
-                       Disabled="@_isSyncing"
-                       OnClick="SyncTest">
-                @if (_isSyncing)
-                {
-                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="me-2"/>
-                    <span>Syncing...</span>
-                }
-                else
-                {
-                    <span>Sync</span>
-                }
-            </MudButton>
-        </MudStack>
-
-        @if (_syncStatus == SyncStatus.Success)
-        {
-            <MudAlert Severity="Severity.Success" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _syncStatus = null">
-                Sync completed successfully.
-            </MudAlert>
-        }
-        else if (_syncStatus == SyncStatus.Failure)
-        {
-            <MudAlert Severity="Severity.Error" Class="mt-4" ShowCloseIcon="true" CloseIconClicked="() => _syncStatus = null">
-                Sync failed. Please check your connection and try again.
-            </MudAlert>
-        }
     </MudItem>
     @* Right column: Spending charts (2/3) *@
     <MudItem xs="12" md="8">
@@ -171,7 +141,6 @@
     private IEnumerable<Account>? _accounts;
     private List<Transaction>? _transactions;
     private bool _isSyncing;
-    private SyncStatus? _syncStatus;
 
     private int _periodDays = 30;
     private DateTimeOffset _periodFrom;
@@ -302,30 +271,6 @@
             .Select(g => new CategoryDataPoint(g.Key, Math.Abs(g.Sum(t => t.Amount))))
             .OrderByDescending(x => x.Value)
             .ToList();
-    }
-
-    private async Task SyncTest()
-    {
-        _isSyncing = true;
-        _syncStatus = null;
-        try
-        {
-            var connectionId = Guid.Parse("9588ff43-b08a-4fc0-ab5f-6fc17bd8e7bf");
-            var status = await EnableBankingService.SyncExternalConnection(connectionId);
-
-            if (status == SyncStatus.SessionExpired)
-            {
-                await EnableBankingService.ReauthorizeAsync(connectionId);
-                return;
-            }
-
-            _syncStatus = status;
-            await RefreshData();
-        }
-        finally
-        {
-            _isSyncing = false;
-        }
     }
 
     public async ValueTask DisposeAsync()
