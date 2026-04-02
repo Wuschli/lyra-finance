@@ -5,9 +5,9 @@
 
     const activeIndices = {};
     const chartColors = {};
-    const globalMoveListeners = {};
+    const canvasLeaveListeners = {};
     const tableHoverListeners = {};
-    const wasInsideCanvas = {};
+    const isHovered = {}; // true while pointer is inside the canvas
 
     function buildDataset(colors, values) {
         return {
@@ -24,10 +24,11 @@
         const colors = chartColors[canvasId];
         const dataset = chart.data.datasets[0];
         const count = dataset.data.length;
-        dataset.backgroundColor = Array.from({ length: count }, (_, i) => {
-            if (activeIndex === -1 || i === activeIndex) return colors[i];
-            return INACTIVE_COLOR;
-        });
+        dataset.backgroundColor = Array.from({ length: count },
+            (_, i) => {
+                if (activeIndex === -1 || i === activeIndex) return colors[i];
+                return INACTIVE_COLOR;
+            });
         chart.update('none');
     }
 
@@ -47,12 +48,14 @@
                     const total = dataset.data.reduce((a, b) => a + b, 0);
                     const value = dataset.data[activeIndex];
                     label = chart.data.labels[activeIndex];
-                    amount = value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' \u20AC';
+                    amount = value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+                        ' \u20AC';
                     pct = total > 0 ? ((value / total) * 100).toFixed(1) + '%' : '';
                 } else {
                     label = totalLabel;
                     const total = chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
-                    amount = total.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' \u20AC';
+                    amount = total.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+                        ' \u20AC';
                     pct = '';
                 }
 
@@ -74,7 +77,8 @@
 
                 ctx.font = `bold ${amountSize}px sans-serif`;
                 ctx.fillStyle = getComputedStyle(document.documentElement)
-                    .getPropertyValue('--mud-palette-text-primary').trim() || '#222';
+                    .getPropertyValue('--mud-palette-text-primary').trim() ||
+                    '#222';
                 ctx.fillText(amount, cx, startY + lineH);
 
                 ctx.font = `${pctSize}px sans-serif`;
@@ -94,14 +98,18 @@
             animation: false,
             cutout,
             plugins: {
-                legend: showLegend ? {
-                    display: true,
-                    position: 'bottom',
-                    labels: { boxWidth: 12, padding: 10, font: { size: 11 } }
-                } : { display: false },
+                legend: showLegend
+                    ? {
+                        display: true,
+                        position: 'bottom',
+                        labels: { boxWidth: 12, padding: 10, font: { size: 11 } }
+                    }
+                    : { display: false },
                 tooltip: { enabled: false },
             },
             onHover(_, active, chart) {
+                // Ignore Chart.js hover callbacks that fire after the pointer has left
+                if (!isHovered[canvasId]) return;
                 const newIndex = active.length > 0 ? active[0].index : -1;
                 const prev = activeIndices[canvasId] ?? -1;
                 if (newIndex === prev) return;
@@ -118,6 +126,14 @@
         if (chart) applySegmentHighlight(chart, canvasId, -1);
     }
 
+    function isTbodyHovered(canvasId) {
+        for (const entry of Object.values(tableHoverListeners)) {
+            if (entry.ids.includes(canvasId) && entry.tbody.matches(':hover'))
+                return true;
+        }
+        return false;
+    }
+
     function createChart(canvasId, labels, values, colors, cutout, showLegend, totalLabel) {
         const existing = charts[canvasId];
         if (existing) {
@@ -125,40 +141,44 @@
             delete charts[canvasId];
         }
 
-        if (globalMoveListeners[canvasId]) {
-            document.removeEventListener('mousemove', globalMoveListeners[canvasId]);
-            delete globalMoveListeners[canvasId];
+        if (canvasLeaveListeners[canvasId]) {
+            const { el, fn, enterFn } = canvasLeaveListeners[canvasId];
+            el.removeEventListener('pointerleave', fn);
+            el.removeEventListener('pointerenter', enterFn);
+            delete canvasLeaveListeners[canvasId];
         }
 
         delete activeIndices[canvasId];
         delete chartColors[canvasId];
-        delete wasInsideCanvas[canvasId];
+        delete isHovered[canvasId];
 
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
 
         activeIndices[canvasId] = -1;
         chartColors[canvasId] = colors;
-        wasInsideCanvas[canvasId] = false;
+        isHovered[canvasId] = false;
 
-        charts[canvasId] = new Chart(canvas, {
-            type: 'doughnut',
-            data: { labels, datasets: [buildDataset(colors, values)] },
-            options: buildOptions(canvasId, cutout, showLegend),
-            plugins: [makeCenterLabelPlugin(canvasId, totalLabel)],
-        });
+        charts[canvasId] = new Chart(canvas,
+            {
+                type: 'doughnut',
+                data: { labels, datasets: [buildDataset(colors, values)] },
+                options: buildOptions(canvasId, cutout, showLegend),
+                plugins: [makeCenterLabelPlugin(canvasId, totalLabel)],
+            });
 
-        const onDocumentMove = (e) => {
-            const el = document.getElementById(canvasId);
-            if (!el) return;
-            const rect = el.getBoundingClientRect();
-            const inside = e.clientX >= rect.left && e.clientX <= rect.right
-                && e.clientY >= rect.top && e.clientY <= rect.bottom;
-            if (!inside && wasInsideCanvas[canvasId]) resetChart(canvasId);
-            wasInsideCanvas[canvasId] = inside;
+        const onEnter = () => { isHovered[canvasId] = true; };
+
+        const onLeave = (e) => {
+            if (canvas.contains(e.relatedTarget)) return;
+            isHovered[canvasId] = false;
+            if (isTbodyHovered(canvasId)) return;
+            resetChart(canvasId);
         };
-        globalMoveListeners[canvasId] = onDocumentMove;
-        document.addEventListener('mousemove', onDocumentMove);
+
+        canvas.addEventListener('pointerenter', onEnter);
+        canvas.addEventListener('pointerleave', onLeave);
+        canvasLeaveListeners[canvasId] = { el: canvas, fn: onLeave, enterFn: onEnter };
     }
 
     function render(canvasId, labels, values, colors, totalLabel = 'Total') {
@@ -196,14 +216,13 @@
 
         const onOut = (e) => {
             if (e.relatedTarget && tbody.contains(e.relatedTarget)) return;
-            for (const canvasId of ids) {
+            for (const canvasId of ids)
                 resetChart(canvasId);
-            }
         };
 
         tbody.addEventListener('mouseover', onOver);
         tbody.addEventListener('mouseout', onOut);
-        tableHoverListeners[tbodyId] = { tbody, onOver, onOut };
+        tableHoverListeners[tbodyId] = { tbody, onOver, onOut, ids };
     }
 
     function unbindTableHover(tbodyId) {
@@ -215,9 +234,11 @@
     }
 
     function destroy(canvasId) {
-        if (globalMoveListeners[canvasId]) {
-            document.removeEventListener('mousemove', globalMoveListeners[canvasId]);
-            delete globalMoveListeners[canvasId];
+        if (canvasLeaveListeners[canvasId]) {
+            const { el, fn, enterFn } = canvasLeaveListeners[canvasId];
+            el.removeEventListener('pointerleave', fn);
+            el.removeEventListener('pointerenter', enterFn);
+            delete canvasLeaveListeners[canvasId];
         }
 
         const existing = charts[canvasId];
@@ -227,7 +248,7 @@
         }
         delete activeIndices[canvasId];
         delete chartColors[canvasId];
-        delete wasInsideCanvas[canvasId];
+        delete isHovered[canvasId];
     }
 
     return { render, renderCompact, bindTableHover, unbindTableHover, destroy };
