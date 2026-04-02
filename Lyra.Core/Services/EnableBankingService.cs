@@ -373,64 +373,77 @@ public class EnableBankingService
                 var externalAccountData = sessionDataResponse.AccountsData[i];
                 var externalAccountId = sessionDataResponse.Accounts[i];
 
-                // Get internal account_id and iban by using the connection table
-                const string getAccountIdAndIbanSql = @"
-                    SELECT eca.account_id, eba.iban
-                    FROM external_connection_account eca
-                    JOIN enable_banking_accounts eba
-                            ON eba.external_connection_id = eca.connection_id
-                        AND eba.identification_hash = @IdentificationHash
-                        WHERE eca.connection_id = @ConnectionId
-                        AND eca.external_account_id = @ExternalAccountId";
+                try
+                {
+                    // Get internal account_id and iban by using the connection table
+                    const string getAccountIdAndIbanSql = @"
+                        SELECT eca.account_id, eba.iban
+                        FROM external_connection_account eca
+                        JOIN enable_banking_accounts eba
+                                ON eba.external_connection_id = eca.connection_id
+                            AND eba.identification_hash = @IdentificationHash
+                            WHERE eca.connection_id = @ConnectionId
+                            AND eca.external_account_id = @ExternalAccountId";
 
-                var result = await connection.QueryFirstOrDefaultAsync<(Guid? AccountId, string Iban)>(
-                    getAccountIdAndIbanSql,
-                    new
+                    var result = await connection.QueryFirstOrDefaultAsync<(Guid? AccountId, string Iban)>(
+                        getAccountIdAndIbanSql,
+                        new
+                        {
+                            ConnectionId = externalConnectionId,
+                            ExternalAccountId = externalAccountData.IdentificationHash,
+                            externalAccountData.IdentificationHash
+                        }
+                    );
+
+                    if (result.AccountId == null)
                     {
-                        ConnectionId = externalConnectionId,
-                        ExternalAccountId = externalAccountData.IdentificationHash,
-                        externalAccountData.IdentificationHash
+                        logBuilder.AppendLine($"No internal account_id found for external_account_id {externalAccountData.IdentificationHash}");
+                        continue;
                     }
-                );
 
-                if (result.AccountId == null)
-                {
-                    logBuilder.AppendLine($"No internal account_id found for external_account_id {externalAccountData.IdentificationHash}");
-                    continue;
-                }
+                    var accountId = result.AccountId.Value;
+                    var iban = result.Iban ?? string.Empty;
 
-                var accountId = result.AccountId.Value;
-                var iban = result.Iban ?? string.Empty;
+                    var balance = await _client.Accounts[externalAccountId.Value].Balances.GetAsync();
+                    logBuilder.AppendLine($"Account {accountId} Balance:\n{JsonSerializer.Serialize(balance, jsonOptions)}");
 
-                var balance = await _client.Accounts[externalAccountId.Value].Balances.GetAsync();
-                logBuilder.AppendLine($"Account {accountId} Balance:\n{JsonSerializer.Serialize(balance, jsonOptions)}");
+                    // Collect all balance types returned by the API for this account.
+                    foreach (var balanceType in balance?.Balances?.Select(b => b.BalanceType?.ToString()).OfType<string>() ?? [])
+                        discoveredBalanceTypes.Add(balanceType);
 
-                // Collect all balance types returned by the API for this account.
-                foreach (var balanceType in balance?.Balances?.Select(b => b.BalanceType?.ToString()).OfType<string>() ?? [])
-                discoveredBalanceTypes.Add(balanceType);
-
-                // On the first sync of a new connection (BalanceType not yet set), auto-select
-                // the first available balance type returned by the API.
-                if (externalConnection.BalanceType == null)
-                {
-                    var firstBalanceType = balance?.Balances?.FirstOrDefault()?.BalanceType?.ToString();
-                    if (firstBalanceType != null)
+                    // On the first sync of a new connection (BalanceType not yet set), auto-select
+                    // the first available balance type returned by the API.
+                    if (externalConnection.BalanceType == null)
                     {
-                        externalConnection.BalanceType = firstBalanceType;
-                        await SetBalanceTypeAsync(externalConnectionId, firstBalanceType);
-                        logBuilder.AppendLine($"Auto-selected balance type '{firstBalanceType}' for new connection {externalConnectionId}.");
+                        var firstBalanceType = balance?.Balances?.FirstOrDefault()?.BalanceType?.ToString();
+                        if (firstBalanceType != null)
+                        {
+                            externalConnection.BalanceType = firstBalanceType;
+                            await SetBalanceTypeAsync(externalConnectionId, firstBalanceType);
+                            logBuilder.AppendLine($"Auto-selected balance type '{firstBalanceType}' for new connection {externalConnectionId}.");
+                        }
                     }
-                }
 
-                if (externalConnection.BalanceType != null)
+                    if (externalConnection.BalanceType != null)
+                    {
+                        await UpdateAccountBalance(accountId, balance, externalConnection.BalanceType, logBuilder);
+                    }
+
+                    var transactions = await _client.Accounts[externalAccountId.Value].Transactions.GetAsync();
+                    logBuilder.AppendLine($"Account {accountId} Transactions:\n{JsonSerializer.Serialize(transactions, jsonOptions)}");
+
+                    await UpsertExternalTransactions(accountId, iban, transactions?.Transactions ?? Enumerable.Empty<EnableBanking.Models.Transaction>(), logBuilder);
+                }
+                catch (ErrorResponse ex) when (ex.Error is ErrorCode.EXPIRED_SESSION or ErrorCode.CLOSED_SESSION or ErrorCode.REVOKED_SESSION)
                 {
-                    await UpdateAccountBalance(accountId, balance, externalConnection.BalanceType, logBuilder);
+                    // Session errors are fatal — re-throw so the outer catch can mark the connection as expired.
+                    throw;
                 }
-
-                var transactions = await _client.Accounts[externalAccountId.Value].Transactions.GetAsync();
-                logBuilder.AppendLine($"Account {accountId} Transactions:\n{JsonSerializer.Serialize(transactions, jsonOptions)}");
-
-                await UpsertExternalTransactions(accountId, iban, transactions?.Transactions ?? Enumerable.Empty<EnableBanking.Models.Transaction>(), logBuilder);
+                catch (ErrorResponse ex)
+                {
+                    status = SyncStatus.Failure;
+                    logBuilder.AppendLine($"ASPSP error for account {externalAccountData.IdentificationHash} (code: {ex.Code}, error: {ex.Error}): {ex.Message}");
+                }
             }
 
             // Persist the union of all balance types discovered across all accounts.
