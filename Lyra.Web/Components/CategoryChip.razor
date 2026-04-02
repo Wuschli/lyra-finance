@@ -4,23 +4,16 @@
 @inject TransactionCategoryService CategoryService
 @inject CategoryIconService IconService
 
-@if (string.IsNullOrWhiteSpace(Category))
-{
-    <span class="cat-chip cat-chip--empty" style="@ChipStyle(null)">
-        <MudIcon Icon="@IconService.GetIcon(null)" Class="cat-chip__icon" Style="@IconColorStyle(null)"/>
-        <span class="cat-chip__label">Uncategorized</span>
-    </span>
-}
-else
-{
-    <span class="cat-chip" style="@ChipStyle(Category)">
-        <MudIcon Icon="@IconService.GetIcon(Category)" Class="cat-chip__icon" Style="@IconColorStyle(Category)"/>
-        <span class="cat-chip__label">@Category</span>
-    </span>
-}
+<span class="chip @(string.IsNullOrWhiteSpace(Category) ? "empty" : "")"
+      style="@CategoryStyleHelper.ChipStyle(CategoryService, Category)">
+    <MudIcon Icon="@IconService.GetIcon(Category)"
+             Class="icon"
+             Style="@CategoryStyleHelper.IconColorStyle(CategoryService, Category)"/>
+    <span class="label">@(string.IsNullOrWhiteSpace(Category) ? "Uncategorized" : Category)</span>
+</span>
 
 <style>
-    .cat-chip {
+    .chip {
         display: inline-flex;
         align-items: center;
         gap: 6px;
@@ -33,18 +26,16 @@ else
         user-select: none;
     }
 
-    .cat-chip--empty {
-        opacity: 0.5;
-    }
+    .empty { opacity: 0.5; }
 
-    .cat-chip__icon {
+    .icon {
         font-size: 18px !important;
         width: 18px !important;
         height: 18px !important;
         flex-shrink: 0;
     }
 
-    .cat-chip__label {
+    .label {
         overflow: hidden;
         text-overflow: ellipsis;
         color: var(--mud-palette-text-secondary);
@@ -53,28 +44,4 @@ else
 
 @code {
     [Parameter] public string? Category { get; set; }
-
-    private string ChipStyle(string? category)
-    {
-        var color = CategoryService.GetColor(category);
-        return $"background-color: {HexWithAlpha(color, 0.15)}; color: {color};";
-    }
-
-    private string IconColorStyle(string? category)
-        => $"color: {CategoryService.GetColor(category)};";
-
-    private string LabelColorStyle(string? category)
-        => $"color: {CategoryService.GetColor(category)};";
-
-    /// <summary>Converts a #RRGGBB hex color to rgba(r,g,b,alpha) for the chip background.</summary>
-    private static string HexWithAlpha(string hex, double alpha)
-    {
-        hex = hex.TrimStart('#');
-        if (hex.Length != 6) return $"rgba(128,128,128,{alpha})";
-
-        var r = Convert.ToInt32(hex[..2], 16);
-        var g = Convert.ToInt32(hex[2..4], 16);
-        var b = Convert.ToInt32(hex[4..6], 16);
-        return $"rgba({r},{g},{b},{alpha.ToString(System.Globalization.CultureInfo.InvariantCulture)})";
-    }
 }
