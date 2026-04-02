@@ -1,9 +1,11 @@
 @using Lyra.Core.Models
 @using Lyra.Core.Services
 @using MudBlazor
+@using Lyra.Web.Components.Dialogs
 @inject AccountService AccountService
 @inject EnableBankingService EnableBankingService
 @inject AccountNotificationService AccountNotificationService
+@inject IDialogService DialogService
 @implements IAsyncDisposable
 
 <MudNavGroup Title="Accounts" Icon="@Icons.Material.Filled.AccountBalance" Expanded="true">
@@ -49,6 +51,9 @@
             </MudNavLink>
         }
     }
+    <MudNavLink Icon="@Icons.Material.Filled.Add" OnClick="OpenAddAccountDialogAsync">
+        Add Account
+    </MudNavLink>
 </MudNavGroup>
 
 <style>
@@ -89,6 +94,24 @@
             .ToHashSet();
 
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OpenAddAccountDialogAsync()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true };
+        var parameters = new DialogParameters<AccountNameDialog>
+        {
+            { x => x.InitialName, string.Empty }
+        };
+
+        var dialog = await DialogService.ShowAsync<AccountNameDialog>("New Account", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string name } && !string.IsNullOrWhiteSpace(name))
+        {
+            await AccountService.CreateAccountForCurrentUserAsync(name);
+            await AccountNotificationService.NotifyAccountsChangedAsync();
+        }
     }
 
     public async ValueTask DisposeAsync()

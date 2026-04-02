@@ -361,11 +361,11 @@ else
     {
         var suggestedName = extAccount.Name ?? extAccount.Iban ?? extAccount.IdentificationHash;
 
-        var parameters = new DialogParameters<RenameAccountDialog>
+        var parameters = new DialogParameters<AccountNameDialog>
         {
             { x => x.InitialName, suggestedName }
         };
-        var dialog = await DialogService.ShowAsync<RenameAccountDialog>("New Account Name", parameters);
+        var dialog = await DialogService.ShowAsync<AccountNameDialog>("New Account Name", parameters);
         var result = await dialog.Result;
 
         if (result.Canceled || result.Data is not string chosenName)
@@ -379,11 +379,11 @@ else
 
     private async Task RenameLocalAccountAsync(Guid accountId, string currentName)
     {
-        var parameters = new DialogParameters<RenameAccountDialog>
+        var parameters = new DialogParameters<AccountNameDialog>
         {
             { x => x.InitialName, currentName }
         };
-        var dialog = await DialogService.ShowAsync<RenameAccountDialog>("Rename Account", parameters);
+        var dialog = await DialogService.ShowAsync<AccountNameDialog>("Rename Account", parameters);
         var result = await dialog.Result;
 
         if (result.Canceled || result.Data is not string newName)

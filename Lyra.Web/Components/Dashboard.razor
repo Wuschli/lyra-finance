@@ -58,35 +58,6 @@
                 }
             }
 
-            <MudItem xs="12">
-                <MudCard Elevation="1" Style="border: 2px dashed var(--mud-palette-divider);">
-                    <MudCardContent>
-                        <MudText Typo="Typo.subtitle1" Class="mb-3">
-                            <MudIcon Icon="@Icons.Material.Filled.Add" Class="me-1"/>
-                            New Account
-                        </MudText>
-                        <MudTextField @bind-Value="_newAccountName"
-                                      Label="Account Name"
-                                      Placeholder="e.g. Sparkasse, Crypto Wallet"
-                                      Variant="Variant.Outlined"
-                                      Adornment="Adornment.End"
-                                      AdornmentIcon="@Icons.Material.Filled.Add"
-                                      OnAdornmentClick="CreateAccount"
-                                      OnKeyUp="HandleKeyUp"
-                                      Immediate="true"
-                                      Class="mb-2"/>
-                        <MudButton Variant="Variant.Filled"
-                                   Color="Color.Primary"
-                                   FullWidth="true"
-                                   StartIcon="@Icons.Material.Filled.Add"
-                                   Disabled="@string.IsNullOrWhiteSpace(_newAccountName)"
-                                   OnClick="CreateAccount">
-                            Add Account
-                        </MudButton>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-
             @if (_accounts == null)
             {
                 <MudItem xs="12">
@@ -199,7 +170,6 @@
 @code {
     private IEnumerable<Account>? _accounts;
     private List<Transaction>? _transactions;
-    private string _newAccountName = string.Empty;
     private bool _isSyncing;
     private SyncStatus? _syncStatus;
 
@@ -332,21 +302,6 @@
             .Select(g => new CategoryDataPoint(g.Key, Math.Abs(g.Sum(t => t.Amount))))
             .OrderByDescending(x => x.Value)
             .ToList();
-    }
-
-    private async Task CreateAccount()
-    {
-        if (string.IsNullOrWhiteSpace(_newAccountName)) return;
-
-        _ = await AccountService.CreateAccountForCurrentUserAsync(_newAccountName);
-        _newAccountName = string.Empty;
-        await RefreshData();
-    }
-
-    private async Task HandleKeyUp(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter")
-            await CreateAccount();
     }
 
     private async Task SyncTest()

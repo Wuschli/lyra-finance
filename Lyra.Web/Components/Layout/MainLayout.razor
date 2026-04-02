@@ -1,7 +1,7 @@
 ﻿@inherits LayoutComponentBase
 @using MudBlazor
 
-<MudThemeProvider/>
+<MudThemeProvider Theme="LyraTheme"/>
 <MudPopoverProvider/>
 <MudDialogProvider/>
 <MudSnackbarProvider/>
@@ -21,3 +21,15 @@
         <LoginView/>
     </NotAuthorized>
 </AuthorizeView>
+
+@code
+{
+    MudTheme LyraTheme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = Colors.Teal.Default,
+            Secondary = Colors.Indigo.Default,
+        }
+    };
+}
