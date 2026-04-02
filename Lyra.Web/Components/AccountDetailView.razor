@@ -3,7 +3,6 @@
 @using Lyra.Core.Models
 @using Lyra.Core.Services
 @using MudBlazor
-@using MudBlazor.Charts
 @using Transaction = Lyra.Core.Models.Transaction
 @inject TransactionRepository TransactionRepository
 @inject UserService UserService
@@ -44,60 +43,10 @@ else
         </div>
     }
 
-    @if (!_transactions.Any())
-    {
-        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-4">
-            No transactions found for this account.
-        </MudAlert>
-    }
-    else
-    {
-        <MudTable Items="_transactions"
-                  Hover="true"
-                  Striped="true"
-                  Dense="true"
-                  Elevation="2"
-                  Class="rounded">
-            <HeaderContent>
-                <MudTh Style="width: 110px;">Date</MudTh>
-                <MudTh>Counterparty</MudTh>
-                <MudTh>Description</MudTh>
-                <MudTh Style="width: 130px; text-align: right;">Amount</MudTh>
-                <MudTh Style="min-width: 200px;">Category</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Date">
-                    <MudText Typo="Typo.body2" Color="Color.Default">
-                        @context.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
-                    </MudText>
-                </MudTd>
-                <MudTd DataLabel="Counterparty">
-                    <MudText Typo="Typo.body2" Color="Color.Default">
-                        <strong>@context.CounterpartyName</strong>
-                    </MudText>
-                    @if (!string.IsNullOrWhiteSpace(context.CounterpartyIban))
-                    {
-                        <MudText Typo="Typo.caption" Color="Color.Default">@context.CounterpartyIban</MudText>
-                    }
-                </MudTd>
-                <MudTd DataLabel="Description">
-                    <MudText Typo="Typo.body2" Color="Color.Default">@context.Description</MudText>
-                </MudTd>
-                <MudTd DataLabel="Amount" Style="text-align: right;">
-                    <MudText Typo="Typo.body2"
-                             Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
-                        <strong>@context.Amount.ToString("N2") €</strong>
-                    </MudText>
-                </MudTd>
-                <MudTd DataLabel="Category">
-                    <CategoryInput
-                        Value="@context.Category"
-                        Suggestions="_allCategories"
-                        OnCommit="@(cat => SetCategory(context, cat))"/>
-                </MudTd>
-            </RowTemplate>
-        </MudTable>
-    }
+    <TransactionTable
+        Transactions="_transactions"
+        AllCategories="_allCategories"
+        OnCategoryChanged="OnCategoryChanged"/>
 }
 
 @code {
@@ -164,13 +113,13 @@ else
         var today = DateTimeOffset.UtcNow.Date;
         var startDate = today.AddDays(-(days - 1));
 
-    // Group net transaction amounts by local date
+        // Group net transaction amounts by local date
         var dailyDeltas = transactions
             .Where(t => t.TransactionDate.LocalDateTime.Date >= startDate)
             .GroupBy(t => t.TransactionDate.LocalDateTime.Date)
             .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
 
-    // Walk backwards from today: start with the current balance and undo each day's transactions
+        // Walk backwards from today: start with the current balance and undo each day's transactions
         var points = new List<BalancePoint>(days);
         var balance = currentBalance.Value;
 
@@ -180,19 +129,16 @@ else
             points.Add(new BalancePoint(new DateTimeOffset(date, TimeSpan.Zero), balance));
 
             if (dailyDeltas.TryGetValue(date, out var delta))
-                balance -= delta; // remove this day's transactions to get the balance before them
+                balance -= delta;
         }
 
-        points.Reverse(); // oldest → newest
+        points.Reverse();
         return points;
     }
 
-    private async Task SetCategory(Transaction tx, string? category)
+    private async Task OnCategoryChanged(Transaction tx)
     {
-        await TransactionRepository.SetCategoryAsync(tx.Id, category);
-        tx.Category = category;
-
-    // Refresh suggestions if a new category was introduced
+        // Re-fetch suggestions so the list stays fresh after any assignment
         var userId = await UserService.GetCurrentUserId();
         _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
     }
@@ -201,5 +147,4 @@ else
     {
         await JS.InvokeVoidAsync("balanceChart.destroy", _canvasId);
     }
-
 }

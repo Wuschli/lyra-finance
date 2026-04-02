@@ -49,55 +49,48 @@ else
                     </MudStack>
                 </CardHeaderContent>
                 <CardHeaderActions>
-                    <MudStack AlignItems="AlignItems.End" Spacing="0">
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
-                            <MudIconButton Icon="@Icons.Material.Filled.Settings"
-                                           Color="Color.Default"
-                                           Title="Connection settings"
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+                        <MudTooltip Text="@(IsExpired(conn) ? "Session expired" : $"Valid until {conn.ExpiresAt:d}")">
+                            <MudIconButton Icon="@(IsExpired(conn) ? Icons.Material.Filled.LockClock : Icons.Material.Filled.Lock)"
+                                           Color="@(IsExpired(conn) ? Color.Error : Color.Success)"
                                            Size="Size.Small"
-                                           OnClick="@(() => OpenConnectionSettingsDialogAsync(conn))"/>
-                            <MudIconButton Icon="@Icons.Material.Outlined.Assignment"
-                                           Color="Color.Default"
-                                           Title="View sync logs"
+                                           DisableRipple="true"
+                                           Style="cursor: default; pointer-events: none;"/>
+                        </MudTooltip>
+                        <MudTooltip Text="@(lastLog != null ? $"Last sync {lastLog.SyncEnd?.ToString("g") ?? lastLog.SyncStart.ToString("g")}" : "No sync yet")">
+                            <MudIconButton Icon="@(lastLog != null ? GetSyncLogIcon(lastLog.Status) : Icons.Material.Outlined.Assignment)"
+                                           Color="@(lastLog != null ? GetSyncLogColor(lastLog.Status) : Color.Default)"
                                            Size="Size.Small"
                                            OnClick="@(() => OpenSyncLogDialogAsync(conn.Id, conn.ConnectionName))"/>
+                        </MudTooltip>
+                        <MudTooltip Text="Connection settings">
+                            <MudIconButton Icon="@Icons.Material.Filled.Settings"
+                                           Color="Color.Default"
+                                           Size="Size.Small"
+                                           OnClick="@(() => OpenConnectionSettingsDialogAsync(conn))"/>
+                        </MudTooltip>
+                        <MudTooltip Text="Synchronize connection">
                             <MudIconButton Icon="@Icons.Material.Filled.Sync"
                                            Color="Color.Primary"
-                                           Title="Synchronize connection"
                                            Size="Size.Small"
                                            Disabled="@isSyncing"
                                            OnClick="@(() => SyncConnectionAsync(conn.Id))"/>
-                            @if (!string.IsNullOrEmpty(conn.SessionId))
-                            {
+                        </MudTooltip>
+                        @if (!string.IsNullOrEmpty(conn.SessionId))
+                        {
+                            <MudTooltip Text="Delete session (revoke bank consent)">
                                 <MudIconButton Icon="@Icons.Material.Filled.LinkOff"
                                                Color="Color.Warning"
-                                               Title="Delete session (revoke bank consent)"
                                                Size="Size.Small"
                                                OnClick="@(() => DeleteSessionAsync(conn.Id))"/>
-                            }
+                            </MudTooltip>
+                        }
+                        <MudTooltip Text="Remove connection">
                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                            Color="Color.Error"
-                                           Title="Remove connection"
                                            Size="Size.Small"
                                            OnClick="@(() => DeleteConnectionAsync(conn.Id))"/>
-                        </MudStack>
-                        <MudStack AlignItems="AlignItems.End" Spacing="0" Class="px-2 pb-1">
-                            <MudText Typo="Typo.caption" Color="@(IsExpired(conn) ? Color.Error : Color.Secondary)">
-                                @(IsExpired(conn) ? "Session expired" : $"Valid until {conn.ExpiresAt:d}")
-                            </MudText>
-                            @if (lastLog != null)
-                            {
-                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                                    <MudIcon Icon="@GetSyncLogIcon(lastLog.Status)"
-                                             Color="@GetSyncLogColor(lastLog.Status)"
-                                             Size="Size.Small"
-                                             Style="font-size: 0.85rem;"/>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        Last sync @(lastLog.SyncEnd?.ToString("g") ?? lastLog.SyncStart.ToString("g"))
-                                    </MudText>
-                                </MudStack>
-                            }
-                        </MudStack>
+                        </MudTooltip>
                     </MudStack>
                 </CardHeaderActions>
             </MudCardHeader>

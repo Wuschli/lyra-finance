@@ -1,0 +1,61 @@
+@page "/transactions"
+@using Lyra.Core.Models
+@using Lyra.Core.Services
+@using MudBlazor
+@using Transaction = Lyra.Core.Models.Transaction
+@using Lyra.Core
+@inject AccountService AccountService
+@inject TransactionRepository TransactionRepository
+@inject UserService UserService
+@attribute [Authorize]
+
+<MudText Typo="Typo.h4" Class="mb-1">All Transactions</MudText>
+<MudText Typo="Typo.body2" Color="Color.Default" Class="mb-4">
+    Search and filter transactions across all accounts
+</MudText>
+
+@if (_transactions == null || _accounts == null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-4"/>
+    <MudText Typo="Typo.body2" Class="mt-2">Loading transactions…</MudText>
+}
+else
+{
+    <TransactionTable
+        Transactions="_transactions"
+        AllCategories="_allCategories"
+        ShowAccountColumn="true"
+        Accounts="_accounts"
+        OnCategoryChanged="OnCategoryChanged"/>
+}
+
+@code {
+
+    private List<Transaction>? _transactions;
+    private List<string> _allCategories = new();
+    private List<Account>? _accounts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var userId = await UserService.GetCurrentUserId();
+
+        _accounts = (await AccountService.GetAccountsForCurrentUserAsync()).ToList();
+
+        var to = DateTimeOffset.UtcNow.Date.AddDays(1);
+        var from = to.AddYears(-1); // last 12 months; adjust as needed
+
+        _transactions = (await TransactionRepository.GetTransactionsByUserAsync(userId, from, to)).ToList();
+        _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
+    }
+
+    private async Task OnCategoryChanged(Transaction tx)
+    {
+        var userId = await UserService.GetCurrentUserId();
+        _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
+    }
+}

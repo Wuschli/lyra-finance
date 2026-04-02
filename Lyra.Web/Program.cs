@@ -5,6 +5,7 @@ using Lyra.Core.Auth;
 using Lyra.Core.EnableBanking;
 using Lyra.Core.Services;
 using Lyra.Web.Components;
+using Lyra.Web.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -73,7 +74,9 @@ public class Program
             .AddScoped<EnableBankingService>()
             .AddSingleton<EnableBankingAccessTokenProvider>()
             .AddScoped<TransactionRepository>()
-            .AddScoped<AccountNotificationService>();
+            .AddScoped<AccountNotificationService>()
+            .AddSingleton<TransactionCategoryService>()
+            .AddSingleton<CategoryIconService>();
 
         builder.Services.AddTransient<IClaimsTransformation, UserClaimsTransformation>();
 

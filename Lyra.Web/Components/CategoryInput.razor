@@ -1,63 +1,494 @@
-@using System.Timers
+﻿@using Lyra.Core.Services
+@using Lyra.Web.Services
+@using MudBlazor
+@inject TransactionCategoryService CategoryService
+@inject CategoryIconService IconService
+@inject IJSRuntime JS
 
-<div class="position-relative">
-    <input
-        type="text"
-        class="form-control form-control-sm"
-        list="@_listId"
-        value="@Value"
-        placeholder="Add category�"
-        @oninput="OnInput"
-        @onchange="OnChange"
-        @onkeydown="OnKeyDown" />
-    <datalist id="@_listId">
-        @foreach (var suggestion in Suggestions)
+<div class="@RootClass">
+    <div class="cat-input__field" @onclick="ToggleAsync">
+        @if (!string.IsNullOrEmpty(Value) && !_open)
         {
-            <option value="@suggestion" />
+            @* Selected value shown as an embedded chip — only when closed *@
+            <span class="cat-input__chip" style="@ChipStyle(Value)">
+                <MudIcon Icon="@IconService.GetIcon(Value)" Class="cat-input__chip-icon" Style="@IconColorStyle(Value)"/>
+                <span class="cat-input__chip-label">@Value</span>
+            </span>
         }
-    </datalist>
+        else if (!_open)
+        {
+            @* No value selected and dropdown closed — show Uncategorized chip as placeholder *@
+            <span class="cat-input__chip cat-input__chip--placeholder" style="@ChipStyle(null)">
+                <MudIcon Icon="@IconService.GetIcon(null)" Class="cat-input__chip-icon" Style="@IconColorStyle(null)"/>
+                <span class="cat-input__chip-label">Uncategorized</span>
+            </span>
+        }
+        <input @ref="_inputRef"
+               type="text"
+               class="cat-input__native @(!_open ? "cat-input__native--hidden" : "")"
+               value="@_inputText"
+               autocomplete="off"
+               placeholder="Search…"
+               @oninput="OnInput"
+               @onkeydown="OnKeyDown"
+               @onfocus="OnFocus"
+               @onblur="OnBlur"/>
+        @if (_open)
+        {
+            <button type="button" class="cat-input__clear" tabindex="-1"
+                    @onmousedown:preventDefault
+                    @onclick:stopPropagation
+                    @onclick="ClearAsync">
+                <MudIcon Icon="@Icons.Material.Filled.Close" Class="cat-input__clear-icon"/>
+            </button>
+        }
+    </div>
+
+    @if (_open && _suggestions.Any())
+    {
+        <div class="cat-input__popover" id="@_popoverId">
+            @for (var i = 0; i < _suggestions.Count; i++)
+            {
+                var item = _suggestions[i];
+                var index = i;
+                var isSelected = item == Value;
+                var isHighlighted = index == _highlightedIndex;
+                <div class="cat-input__option @(isSelected ? "cat-input__option--selected" : "") @(isHighlighted ? "cat-input__option--highlighted" : "")"
+                     data-index="@index"
+                     @onpointerdown:preventDefault
+                     @onmouseover="() => _highlightedIndex = index"
+                     @onclick="() => SelectAsync(item)">
+                    @if (isSelected)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Check" Class="cat-input__check-icon"/>
+                    }
+                    else
+                    {
+                        <span class="cat-input__check-placeholder"></span>
+                    }
+                    <span class="cat-input__option-chip" style="@ChipBgStyle(item)">
+                        <MudIcon Icon="@IconService.GetIcon(item)" Class="cat-input__chip-icon" Style="@IconColorStyle(item)" />
+                        <span class="cat-input__chip-label">@item</span>
+                    </span>
+                </div>
+            }
+        </div>
+    }
 </div>
 
-@code {
-    [Parameter] public string? Value { get; set; }
-    [Parameter] public IReadOnlyList<string> Suggestions { get; set; } = [];
-    [Parameter] public EventCallback<string?> OnCommit { get; set; }
+<script>
+    (function () {
+        document.addEventListener('keydown', function (e) {
+            if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') &&
+                e.target.classList.contains('cat-input__native')) {
+                e.preventDefault();
+            }
+        }, true);
+    })();
 
-    private readonly string _listId = $"cat-{Guid.NewGuid():N}";
-    private string? _pendingValue;
+    window.catInputScrollHighlighted = function (popoverId, index) {
+        const popover = document.getElementById(popoverId);
+        if (!popover) return;
+        const item = popover.querySelector('[data-index="' + index + '"]');
+        if (!item) return;
+        item.scrollIntoView({ block: 'nearest' });
+    };
+</script>
 
-    private void OnInput(ChangeEventArgs e)
-    {
-        _pendingValue = e.Value?.ToString();
+<style>
+    .cat-input {
+        position: relative;
+        width: 100%;
+        font-family: inherit;
     }
 
-    private async Task OnChange(ChangeEventArgs e)
+    .cat-input__field {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        position: relative;
+        border: 1px solid rgba(var(--mud-palette-text-primary), 0.23);
+        border-radius: 4px;
+        padding: 4px 8px;
+        cursor: pointer;
+        transition: border-color 0.2s;
+        background: transparent;
+        min-height: 44px;
+        box-sizing: border-box;
+    }
+
+    .cat-input--focused .cat-input__field {
+        border: 2px solid var(--mud-palette-primary);
+        padding: 3px 7px;
+    }
+
+    .cat-input--focused .cat-input__field:hover { border-color: var(--mud-palette-primary); }
+
+    .cat-input__field:hover { border-color: rgba(var(--mud-palette-text-primary), 0.6); }
+
+    /* ── Embedded chip in the field ── */
+
+    .cat-input__chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 14px 5px 8px;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        line-height: 1.4;
+        white-space: nowrap;
+        user-select: none;
+        flex-shrink: 0;
+    }
+
+    .cat-input__chip-icon {
+        font-size: 18px !important;
+        width: 18px !important;
+        height: 18px !important;
+        flex-shrink: 0;
+    }
+
+    .cat-input__chip-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--mud-palette-text-secondary);
+    }
+
+    /* ── Native input (visible only when open) ── */
+
+    .cat-input__native {
+        flex: 1;
+        border: none;
+        outline: none;
+        background: transparent;
+        font-size: 0.875rem;
+        color: var(--mud-palette-text-primary);
+        min-width: 0;
+        padding: 2px 0;
+        cursor: pointer;
+        caret-color: var(--mud-palette-primary);
+    }
+
+    .cat-input__native--hidden { display: none; }
+
+    .cat-input__native::placeholder { color: rgba(var(--mud-palette-text-secondary), 0.5); }
+
+    /* ── Dropdown popover ── */
+
+    .cat-input__popover {
+        position: absolute;
+        z-index: 1300;
+        left: 0;
+        right: 0;
+        min-width: max-content;
+        top: calc(100% + 2px);
+        background: var(--mud-palette-surface);
+        border-radius: 4px;
+        box-shadow: 0 5px 5px -3px rgba(0, 0, 0, .2),
+                    0 8px 10px 1px rgba(0, 0, 0, .14),
+                    0 3px 14px 2px rgba(0, 0, 0, .12);
+        max-height: 280px;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    /* ── Dropdown option row ── */
+
+    .cat-input__option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: background 0.15s;
+        color: var(--mud-palette-text-primary);
+    }
+
+    .cat-input__option:hover { background: rgba(var(--mud-palette-primary-rgb), 0.08); }
+
+    .cat-input__option--selected { background: rgba(var(--mud-palette-primary-rgb), 0.06); }
+
+    .cat-input__option--selected:hover { background: rgba(var(--mud-palette-primary-rgb), 0.12); }
+
+    .cat-input__option--highlighted { background: rgba(var(--mud-palette-primary-rgb), 0.14); }
+
+    /* ── Option chip: background only, label in default text color ── */
+
+    .cat-input__option-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 14px 5px 8px;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        line-height: 1.4;
+        white-space: nowrap;
+        user-select: none;
+        flex: 1;
+        color: var(--mud-palette-text-primary);
+    }
+
+    /* ── Check icon (selected indicator) ── */
+
+    .cat-input__check-icon {
+        font-size: 18px !important;
+        width: 18px !important;
+        height: 18px !important;
+        color: var(--mud-palette-primary);
+        flex-shrink: 0;
+    }
+
+    .cat-input__check-placeholder {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+    }
+
+    /* ── Placeholder chip (shown when no value selected) ── */
+
+    .cat-input__chip--placeholder { opacity: 0.5; }
+
+    /* ── Clear button (visible only when open) ── */
+
+    .cat-input__clear {
+        display: flex;
+        align-items: center;
+        background: none;
+        border: none;
+        padding: 2px;
+        cursor: pointer;
+        color: rgba(var(--mud-palette-text-secondary), 0.7);
+        flex-shrink: 0;
+        border-radius: 50%;
+        transition: color 0.15s, background 0.15s;
+    }
+
+    .cat-input__clear:hover {
+        color: var(--mud-palette-text-primary);
+        background: rgba(var(--mud-palette-text-primary), 0.08);
+    }
+
+    .cat-input__clear-icon {
+        font-size: 18px !important;
+        width: 18px !important;
+        height: 18px !important;
+    }
+</style>
+
+@code {
+
+    [Parameter]
+    public string? Value { get; set; }
+
+    [Parameter]
+    public Func<string?, CancellationToken, Task<IEnumerable<string>>> SearchFunc { get; set; }
+        = (_, _) => Task.FromResult(Enumerable.Empty<string>());
+
+    [Parameter]
+    public EventCallback<string?> OnCommit { get; set; }
+
+    private ElementReference _inputRef;
+    private string? _inputText;
+    private bool _open;
+    private bool _focused;
+    private bool _focusInputOnRender;
+    private int _highlightedIndex = -1;
+    private bool _scrollHighlightedOnRender;
+    private List<string> _suggestions = [];
+
+    private readonly string _popoverId = $"cat-popover-{Guid.NewGuid():N}";
+
+    // ── CSS root class ───────────────────────────────────────────────────────
+
+    private string RootClass
     {
-        var value = e.Value?.ToString();
-        _pendingValue = null;
-        await CommitAsync(value);
+        get
+        {
+            var cls = "cat-input";
+            if (_open) cls += " cat-input--open";
+            if (_focused) cls += " cat-input--focused";
+            if (!string.IsNullOrEmpty(Value)) cls += " cat-input--has-value";
+            return cls;
+        }
+    }
+
+    /// <summary>Background-only chip style for dropdown options (no text color).</summary>
+    private string ChipBgStyle(string? category)
+    {
+        var color = CategoryService.GetColor(category);
+        var hex = color.TrimStart('#');
+        if (hex.Length != 6) return "background-color: rgba(128,128,128,0.15);";
+        var r = Convert.ToInt32(hex[..2], 16);
+        var g = Convert.ToInt32(hex[2..4], 16);
+        var b = Convert.ToInt32(hex[4..6], 16);
+        return $"background-color: rgba({r},{g},{b},0.15);";
+    }
+
+    private string ChipStyle(string? category)
+    {
+        var color = CategoryService.GetColor(category);
+        var hex = color.TrimStart('#');
+        if (hex.Length != 6) return $"background-color: rgba(128,128,128,0.15); color: rgba(128,128,128,1);";
+        var r = Convert.ToInt32(hex[..2], 16);
+        var g = Convert.ToInt32(hex[2..4], 16);
+        var b = Convert.ToInt32(hex[4..6], 16);
+        return $"background-color: rgba({r},{g},{b},0.15); color: {color};";
+    }
+
+    private string IconColorStyle(string? category)
+        => $"color: {CategoryService.GetColor(category)};";
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
+    protected override void OnParametersSet()
+    {
+        if (!_focused)
+            _inputText = Value;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusInputOnRender)
+        {
+            _focusInputOnRender = false;
+            await _inputRef.FocusAsync();
+        }
+
+        if (_scrollHighlightedOnRender && _highlightedIndex >= 0)
+        {
+            _scrollHighlightedOnRender = false;
+            await JS.InvokeVoidAsync("catInputScrollHighlighted", _popoverId, _highlightedIndex);
+        }
+    }
+
+    // ── Input events ─────────────────────────────────────────────────────────
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _inputText = e.Value?.ToString();
+        _highlightedIndex = -1;
+        await RefreshSuggestionsAsync(_inputText);
+        _open = _suggestions.Any();
+    }
+
+    private void OnFocus()
+    {
+        _focused = true;
+        _inputText = Value;
+    }
+
+    private async Task OnBlur()
+    {
+        _focused = false;
+        _open = false;
+        _highlightedIndex = -1;
+        await CommitCurrentInputAsync();
     }
 
     private async Task OnKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && _pendingValue is not null)
+        switch (e.Key)
         {
-            var value = _pendingValue;
-            _pendingValue = null;
-            await CommitAsync(value);
-        }
-        else if (e.Key == "Escape")
-        {
-            _pendingValue = null;
+            case "ArrowDown":
+                if (!_open)
+                {
+                    await OpenAsync();
+                    _highlightedIndex = 0;
+                }
+                else if (_suggestions.Any())
+                {
+                    _highlightedIndex = Math.Min(_highlightedIndex + 1, _suggestions.Count - 1);
+                }
+                _scrollHighlightedOnRender = true;
+                break;
+
+            case "ArrowUp":
+                if (_open && _suggestions.Any())
+                {
+                    _highlightedIndex = Math.Max(_highlightedIndex - 1, 0);
+                    _scrollHighlightedOnRender = true;
+                }
+                break;
+
+            case "Enter":
+                if (_open && _highlightedIndex >= 0 && _highlightedIndex < _suggestions.Count)
+                {
+                    await SelectAsync(_suggestions[_highlightedIndex]);
+                }
+                else
+                {
+                    _open = false;
+                    await CommitCurrentInputAsync();
+                }
+                break;
+
+            case "Escape":
+                _open = false;
+                _highlightedIndex = -1;
+                _inputText = Value;
+                break;
         }
     }
+
+    // ── Dropdown ─────────────────────────────────────────────────────────────
+
+    private async Task ToggleAsync()
+    {
+        if (_open)
+        {
+            _open = false;
+            _highlightedIndex = -1;
+        }
+        else
+        {
+            await OpenAsync();
+        }
+    }
+
+    private async Task OpenAsync()
+    {
+        await RefreshSuggestionsAsync(_inputText);
+        if (_suggestions.Any())
+        {
+            _open = true;
+            _highlightedIndex = -1;
+            _focusInputOnRender = true;
+        }
+    }
+
+    private async Task SelectAsync(string item)
+    {
+        _inputText = item;
+        _open = false;
+        _highlightedIndex = -1;
+        await CommitAsync(item);
+    }
+
+    private async Task ClearAsync()
+    {
+        _inputText = null;
+        _open = false;
+        _highlightedIndex = -1;
+        await CommitAsync(null);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private async Task RefreshSuggestionsAsync(string? text)
+        => _suggestions = (await SearchFunc(text, CancellationToken.None)).ToList();
+
+    private Task CommitCurrentInputAsync()
+        => CommitAsync(string.IsNullOrWhiteSpace(_inputText) ? null : _inputText!.Trim());
 
     private async Task CommitAsync(string? value)
     {
         var normalized = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         if (normalized != Value)
-        {
             await OnCommit.InvokeAsync(normalized);
-        }
     }
+
 }

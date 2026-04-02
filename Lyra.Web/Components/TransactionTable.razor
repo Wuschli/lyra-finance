@@ -1,0 +1,293 @@
+﻿@using Lyra.Core.Models
+@using Lyra.Core.Services
+@using MudBlazor
+@using Lyra.Core
+@inject TransactionRepository TransactionRepository
+@inject UserService UserService
+
+<style>
+    .tx-table-wrap table {
+        table-layout: fixed;
+        width: 100%;
+    }
+
+    .tx-cell-clip {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .tx-cell-right  { text-align: right; }
+    .tx-cell-center { text-align: center; }
+</style>
+
+@* ── Toolbar ── *@
+<MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+
+    <MudDateRangePicker @bind-DateRange="_dateRange"
+                        Label="Date range"
+                        Variant="Variant.Outlined"
+                        Margin="Margin.Dense"
+                        Clearable="true"
+                        DateFormat="dd.MM.yy"
+                        PickerVariant="PickerVariant.Dialog"
+                        RelativeWidth="DropdownWidth.Adaptive"/>
+
+    @if (ShowAccountColumn)
+    {
+        <MudSelect T="Guid?"
+                   @bind-Value="_accountFilter"
+                   Label="Account"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense"
+                   Clearable="true"
+                   Style="min-width: 160px;">
+            @foreach (var a in Accounts)
+            {
+                <MudSelectItem Value="@((Guid?)a.Id)">@a.Name</MudSelectItem>
+            }
+        </MudSelect>
+    }
+
+    <MudTextField @bind-Value="_search"
+                  Placeholder="Search counterparty, IBAN, description…"
+                  Adornment="Adornment.Start"
+                  AdornmentIcon="@Icons.Material.Filled.Search"
+                  Clearable="true"
+                  Immediate="true"
+                  DebounceInterval="150"
+                  Variant="Variant.Outlined"
+                  Margin="Margin.Dense"/>
+
+    <MudSelect T="string"
+               @bind-SelectedValues="_categoryFilter"
+               Label="Category"
+               MultiSelection="true"
+               Variant="Variant.Outlined"
+               Margin="Margin.Dense"
+               Clearable="true"
+               Style="width: 250px;"
+               MultiSelectionTextFunc="@(selected => selected.Count == 0 ? string.Empty : $"{selected.Count} selected")">
+        <MudSelectItem Value="@((string)_uncategorizedKey)">Uncategorized</MudSelectItem>
+        @foreach (var cat in _allCategories)
+        {
+            <MudSelectItem Value="@cat">@cat</MudSelectItem>
+        }
+    </MudSelect>
+
+    <MudSelect T="AmountFilter"
+               @bind-Value="_amountFilter"
+               Label="Direction"
+               Variant="Variant.Outlined"
+               Margin="Margin.Dense"
+               Style="width: 140px;">
+        <MudSelectItem Value="AmountFilter.All">All</MudSelectItem>
+        <MudSelectItem Value="AmountFilter.Expenses">Expenses</MudSelectItem>
+        <MudSelectItem Value="AmountFilter.Income">Income</MudSelectItem>
+    </MudSelect>
+
+</MudStack>
+
+@* ── Table ── *@
+<MudTable T="Transaction"
+          Items="Transactions"
+          Filter="_filterFunc"
+          HorizontalScrollbar="false"
+          Hover="true"
+          Striped="true"
+          Dense="true"
+          Elevation="0"
+          Class="tx-table-wrap">
+    <ColGroup>
+        <col style="width: 100px;"/>
+        @if (ShowAccountColumn)
+        {
+            <col style="width: 100px;"/>
+        }
+        <col style="width: 18%;"/>
+        <col/>
+        <col style="width: 250px;"/>
+        <col style="width: 115px;"/>
+    </ColGroup>
+    <HeaderContent>
+        <MudTh Class="tx-cell-center">Date</MudTh>
+        @if (ShowAccountColumn)
+        {
+            <MudTh Class="tx-cell-center">Account</MudTh>
+        }
+        <MudTh Class="tx-cell-center">Counterparty</MudTh>
+        <MudTh Class="tx-cell-center">Description</MudTh>
+        <MudTh Class="tx-cell-center">Category</MudTh>
+        <MudTh Class="tx-cell-center">Amount</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Date" Class="tx-cell-clip">
+            <MudText Typo="Typo.body2" Color="Color.Default">
+                @context.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
+            </MudText>
+        </MudTd>
+        @if (ShowAccountColumn)
+        {
+            <MudTd DataLabel="Account" Class="tx-cell-clip">
+                <MudText Typo="Typo.body2" Color="Color.Default">
+                    @AccountName(context.AccountId)
+                </MudText>
+            </MudTd>
+        }
+        <MudTd DataLabel="Counterparty" Class="tx-cell-clip">
+            <MudText Typo="Typo.body2" Color="Color.Default">
+                <strong>@context.CounterpartyName</strong>
+            </MudText>
+            @if (!string.IsNullOrWhiteSpace(context.CounterpartyIban))
+            {
+                <MudText Typo="Typo.caption" Color="Color.Default">@context.CounterpartyIban</MudText>
+            }
+        </MudTd>
+        <MudTd DataLabel="Description" Class="tx-cell-wrap">
+            <MudText Typo="Typo.body2" Color="Color.Default">@context.Description</MudText>
+        </MudTd>
+        <MudTd DataLabel="Category" Class="tx-cell-center">
+            <CategoryInput Value="@context.Category"
+                           SearchFunc="SearchCategoriesAsync"
+                           OnCommit="@(cat => SetCategoryAsync(context, cat))"/>
+        </MudTd>
+        <MudTd DataLabel="Amount" Class="tx-cell-clip tx-cell-right">
+            <MudText Typo="Typo.body2"
+                     Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
+                <strong>@context.Amount.ToString("N2") €</strong>
+            </MudText>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="my-2">
+            No transactions match the current filter.
+        </MudAlert>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+
+    // ── Parameters ──────────────────────────────────────────────────────────
+
+    /// <summary>The transactions to display. Filtering is applied client-side via MudTable.Filter.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<Transaction> Transactions { get; set; } = [];
+
+    /// <summary>
+    /// Known category suggestions shared across rows. When omitted the component
+    /// fetches them from the repository itself.
+    /// </summary>
+    [Parameter]
+    public IReadOnlyList<string> AllCategories { get; set; } = [];
+
+    /// <summary>
+    /// When <c>true</c> an extra "Account" column and account filter are rendered.
+    /// Pass <see cref="Accounts"/> as well so account names can be resolved.
+    /// </summary>
+    [Parameter]
+    public bool ShowAccountColumn { get; set; }
+
+    /// <summary>Account lookup used for the "Account" column and filter drop-down.</summary>
+    [Parameter]
+    public IReadOnlyList<Account> Accounts { get; set; } = [];
+
+    /// <summary>Raised after a category has been persisted so the parent can refresh its state.</summary>
+    [Parameter]
+    public EventCallback<Transaction> OnCategoryChanged { get; set; }
+
+    // ── State ────────────────────────────────────────────────────────────────
+
+    // Sentinel key used to represent "no category assigned" in the filter list.
+    private const string _uncategorizedKey = "__uncategorized__";
+
+    private string? _search;
+    private AmountFilter _amountFilter = AmountFilter.All;
+    private Guid? _accountFilter;
+    private IReadOnlyCollection<string> _categoryFilter = new List<string>();
+    private DateRange? _dateRange;
+    private List<string> _allCategories = new();
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
+    protected override void OnParametersSet()
+    {
+        if (AllCategories.Count > 0)
+            _allCategories = AllCategories.ToList();
+    }
+
+    // ── Filter delegate ──────────────────────────────────────────────────────
+
+    private bool _filterFunc(Transaction t)
+    {
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var term = _search.Trim();
+            if (!Contains(t.CounterpartyName, term) &&
+                !Contains(t.CounterpartyIban, term) &&
+                !Contains(t.Description, term) &&
+                !Contains(t.Category, term))
+                return false;
+        }
+
+        if (_amountFilter == AmountFilter.Expenses && t.Amount >= 0) return false;
+        if (_amountFilter == AmountFilter.Income   && t.Amount <  0) return false;
+
+        if (_accountFilter.HasValue && t.AccountId != _accountFilter.Value) return false;
+
+        var selectedCategories = _categoryFilter.ToList();
+        if (selectedCategories.Count > 0)
+        {
+            var includeUncategorized = selectedCategories.Contains(_uncategorizedKey);
+            var namedCategories = selectedCategories
+                .Where(c => c != _uncategorizedKey)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var isUncategorized = string.IsNullOrWhiteSpace(t.Category);
+            if (isUncategorized && !includeUncategorized) return false;
+            if (!isUncategorized && !namedCategories.Contains(t.Category!)) return false;
+        }
+
+        if (_dateRange?.Start is not null &&
+            t.TransactionDate.LocalDateTime.Date < _dateRange.Start.Value.Date) return false;
+
+        if (_dateRange?.End is not null &&
+            t.TransactionDate.LocalDateTime.Date > _dateRange.End.Value.Date) return false;
+
+        return true;
+    }
+
+    private static bool Contains(string? haystack, string needle)
+        => haystack?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false;
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private string AccountName(Guid accountId)
+        => Accounts.FirstOrDefault(a => a.Id == accountId)?.Name ?? accountId.ToString("N")[..8];
+
+    private Task<IEnumerable<string>> SearchCategoriesAsync(string? text, CancellationToken _)
+    {
+        var results = string.IsNullOrWhiteSpace(text)
+            ? (IEnumerable<string>)_allCategories
+            : _allCategories.Where(s => s.Contains(text, StringComparison.OrdinalIgnoreCase));
+
+        return Task.FromResult(results);
+    }
+
+    // ── Actions ──────────────────────────────────────────────────────────────
+
+    private async Task SetCategoryAsync(Transaction tx, string? category)
+    {
+        await TransactionRepository.SetCategoryAsync(tx.Id, category);
+        tx.Category = category;
+
+        // Refresh local suggestions so newly introduced categories appear
+        var userId = await UserService.GetCurrentUserId();
+        _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
+
+        await OnCategoryChanged.InvokeAsync(tx);
+    }
+
+    // ── Nested types ─────────────────────────────────────────────────────────
+
+    private enum AmountFilter { All, Expenses, Income }
+}

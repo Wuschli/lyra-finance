@@ -7,6 +7,7 @@
 @inject EnableBankingService EnableBankingService
 @inject UserService UserService
 @inject TransactionRepository TransactionRepository
+@inject TransactionCategoryService CategoryService
 @inject IJSRuntime JS
 @attribute [Authorize]
 @implements IAsyncDisposable
@@ -70,6 +71,7 @@
         <MudDivider Class="my-4"/>
 
     </MudItem>
+
     @* Right column: Spending charts (2/3) *@
     <MudItem xs="12" md="8">
         @if (_transactions != null && _accounts != null)
@@ -105,13 +107,9 @@
                             }
                             @foreach (var item in _combinedData)
                             {
-                                var color = _combinedColors.GetValueOrDefault(item.Label, ColorPalette.Get(61));
                                 <tr data-segment-label="@item.Label" style="cursor: default;">
                                     <td>
-                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                            <div style="width: 10px; height: 10px; border-radius: 50%; background-color: @color; flex-shrink: 0;"></div>
-                                            @item.Label
-                                        </MudStack>
+                                        <CategoryChip Category="@item.Label"/>
                                     </td>
                                     <td style="text-align: right;">@item.Value.ToString("N2") €</td>
                                     <td style="text-align: right;">@((item.Value / combinedTotal * 100).ToString("N1"))%</td>
@@ -140,7 +138,6 @@
 @code {
     private IEnumerable<Account>? _accounts;
     private List<Transaction>? _transactions;
-    private bool _isSyncing;
 
     private int _periodDays = 30;
     private DateTimeOffset _periodFrom;
@@ -151,7 +148,6 @@
 
     private Dictionary<Guid, List<CategoryDataPoint>> _accountData = new();
     private Dictionary<Guid, Dictionary<string, string>> _accountColors = new();
-
     private Dictionary<Guid, string> _accountCanvasIds = new();
 
     private readonly string _combinedCanvasId = $"pie-combined-{Guid.NewGuid():N}";
@@ -159,33 +155,7 @@
 
     private bool _isRendered;
 
-    private static readonly Dictionary<string, string> CategoryColors = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Rent"]             = ColorPalette.Get(1),
-        ["Healthcare"]       = ColorPalette.Get(2),
-        ["Subscriptions"]    = ColorPalette.Get(3),
-        ["Uncategorized"]    = ColorPalette.Get(4),
-        ["Transportation"]   = ColorPalette.Get(5),
-        ["Groceries"]        = ColorPalette.Get(6),
-        ["Transfer"]         = ColorPalette.Get(7),
-        ["Hobby"]            = ColorPalette.Get(8),
-        ["Miscellaneous"]    = ColorPalette.Get(9),
-        ["Sports & Fitness"] = ColorPalette.Get(10),
-        ["Food & Drink"]     = ColorPalette.Get(11),
-        ["Fees"]             = ColorPalette.Get(12),
-        ["Entertainment"]    = ColorPalette.Get(13),
-        ["Savings"]          = ColorPalette.Get(14),
-        ["Insurance"]        = ColorPalette.Get(15),
-        ["Education"]        = ColorPalette.Get(16),
-    };
-
     private record CategoryDataPoint(string Label, decimal Value);
-
-    private static string ColorForLabel(string label)
-        => CategoryColors.GetValueOrDefault(label, "#cccccc");
-
-    private static Dictionary<string, string> BuildColorMap(IEnumerable<CategoryDataPoint> data)
-        => data.ToDictionary(x => x.Label, x => ColorForLabel(x.Label));
 
     protected override async Task OnInitializedAsync()
     {
@@ -244,7 +214,7 @@
         _transactions = (await TransactionRepository.GetTransactionsByUserAsync(userId, _periodFrom, _periodTo)).ToList();
 
         _combinedData = BuildCategoryData(_transactions);
-        _combinedColors = BuildColorMap(_combinedData);
+        _combinedColors = CategoryService.BuildColorMap(_combinedData.Select(x => x.Label));
 
         _accountData = new();
         _accountColors = new();
@@ -253,14 +223,9 @@
         {
             var accountTxs = _transactions.Where(t => t.AccountId == account.Id);
             _accountData[account.Id] = BuildCategoryData(accountTxs);
-            _accountColors[account.Id] = BuildColorMap(_accountData[account.Id]);
+            _accountColors[account.Id] = CategoryService.BuildColorMap(_accountData[account.Id].Select(x => x.Label));
             _accountCanvasIds[account.Id] = $"pie-{account.Id:N}";
         }
-    }
-
-    private async Task RefreshAccounts()
-    {
-        _accounts = await AccountService.GetAccountsForCurrentUserAsync();
     }
 
     private static List<CategoryDataPoint> BuildCategoryData(IEnumerable<Transaction> transactions)
