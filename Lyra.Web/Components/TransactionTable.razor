@@ -195,6 +195,10 @@
     [Parameter]
     public EventCallback<Transaction> OnCategoryChanged { get; set; }
 
+    /// <summary>Pre-selects the category filter on first render. Supplied via query string.</summary>
+    [Parameter]
+    public string? InitialCategory { get; set; }
+
     // ── State ────────────────────────────────────────────────────────────────
 
     // Sentinel key used to represent "no category assigned" in the filter list.
@@ -207,12 +211,24 @@
     private DateRange? _dateRange;
     private List<string> _allCategories = new();
 
+    private bool _initialCategoryApplied;
+
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
     protected override void OnParametersSet()
     {
         if (AllCategories.Count > 0)
             _allCategories = AllCategories.ToList();
+
+        if (!_initialCategoryApplied && !string.IsNullOrWhiteSpace(InitialCategory))
+        {
+            var filterValue = InitialCategory.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase)
+                ? _uncategorizedKey
+                : InitialCategory;
+
+            _categoryFilter = new List<string> { filterValue };
+            _initialCategoryApplied = true;
+        }
     }
 
     // ── Filter delegate ──────────────────────────────────────────────────────

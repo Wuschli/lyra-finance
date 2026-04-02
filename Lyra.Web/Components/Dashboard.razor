@@ -109,7 +109,7 @@
                             {
                                 <tr data-segment-label="@item.Label" style="cursor: default;">
                                     <td>
-                                        <CategoryChip Category="@item.Label"/>
+                                        <CategoryChip Category="@item.Label" OnClick="@(cat => NavManager.NavigateTo($"/transactions?category={Uri.EscapeDataString(cat?.ToLower() ?? string.Empty)}"))" />
                                     </td>
                                     <td style="text-align: right;">@item.Value.ToString("N2") €</td>
                                     <td style="text-align: right;">@((item.Value / combinedTotal * 100).ToString("N1"))%</td>

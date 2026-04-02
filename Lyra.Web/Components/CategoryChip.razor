@@ -4,8 +4,9 @@
 @inject TransactionCategoryService CategoryService
 @inject CategoryIconService IconService
 
-<span class="chip @(string.IsNullOrWhiteSpace(Category) ? "empty" : "")"
-      style="@CategoryStyleHelper.ChipStyle(CategoryService, Category)">
+<span class="chip @(string.IsNullOrWhiteSpace(Category) ? "empty" : "") @(OnClick.HasDelegate ? "clickable" : "")"
+      style="@CategoryStyleHelper.ChipStyle(CategoryService, Category)"
+      @onclick="HandleClick">
     <MudIcon Icon="@IconService.GetIcon(Category)"
              Class="icon"
              Style="@CategoryStyleHelper.IconColorStyle(CategoryService, Category)"/>
@@ -28,6 +29,8 @@
 
     .empty { opacity: 0.5; }
 
+    .clickable { cursor: pointer; }
+
     .icon {
         font-size: 18px !important;
         width: 18px !important;
@@ -44,4 +47,7 @@
 
 @code {
     [Parameter] public string? Category { get; set; }
+    [Parameter] public EventCallback<string?> OnClick { get; set; }
+
+    private Task HandleClick() => OnClick.HasDelegate ? OnClick.InvokeAsync(Category) : Task.CompletedTask;
 }

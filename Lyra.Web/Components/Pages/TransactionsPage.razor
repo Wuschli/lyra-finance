@@ -26,10 +26,14 @@ else
         AllCategories="_allCategories"
         ShowAccountColumn="true"
         Accounts="_accounts"
+        InitialCategory="@Category"
         OnCategoryChanged="OnCategoryChanged"/>
 }
 
 @code {
+
+    [SupplyParameterFromQuery(Name = "category")]
+    public string? Category { get; set; }
 
     private List<Transaction>? _transactions;
     private List<string> _allCategories = new();
