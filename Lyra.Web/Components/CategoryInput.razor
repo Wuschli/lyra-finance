@@ -37,7 +37,9 @@
 
     @if (_open && _suggestions.Any())
     {
-        <div class="popover" id="@_popoverId">
+        <div class="popover" id="@_popoverId"
+             @onpointerdown="() => _suppressBlur = true"
+             @onpointerdown:preventDefault>
             @for (var i = 0; i < _suggestions.Count; i++)
             {
                 var item = _suggestions[i];
@@ -95,24 +97,26 @@
         align-items: center;
         gap: 6px;
         position: relative;
-        border: 1px solid rgba(var(--mud-palette-text-primary), 0.23);
+        border: 2px solid transparent;
         border-radius: 4px;
-        padding: 4px 8px;
+        padding: 3px 7px;
         cursor: pointer;
         transition: border-color 0.2s;
         background: transparent;
-        min-height: 44px;
+        min-height: 52px;
         box-sizing: border-box;
+        box-shadow: 0 0 0 1px rgba(var(--mud-palette-text-primary), 0.23);
     }
 
     .focused .field {
         border: 2px solid var(--mud-palette-primary);
+        box-shadow: none;
         padding: 3px 7px;
     }
 
     .focused .field:hover { border-color: var(--mud-palette-primary); }
 
-    .field:hover { border-color: rgba(var(--mud-palette-text-primary), 0.6); }
+    .field:hover { box-shadow: 0 0 0 1px rgba(var(--mud-palette-text-primary), 0.6); }
 
     .placeholder { opacity: 0.5; }
 
@@ -236,6 +240,7 @@
     private int _highlightedIndex = -1;
     private bool _scrollHighlightedOnRender;
     private List<string> _suggestions = [];
+    private bool _suppressBlur;
 
     private readonly string _popoverId = $"cat-popover-{Guid.NewGuid():N}";
 
@@ -283,7 +288,9 @@
         _inputText = e.Value?.ToString();
         _highlightedIndex = -1;
         await RefreshSuggestionsAsync(_inputText);
-        _open = _suggestions.Any();
+        // Stay open while the user is typing, even if there are no suggestions,
+        // so they can finish typing a new category name.
+        _open = _focused;
     }
 
     private void OnFocus()
@@ -294,6 +301,9 @@
 
     private async Task OnBlur()
     {
+        if (_suppressBlur)
+            return;
+
         _focused = false;
         _open = false;
         _highlightedIndex = -1;
@@ -361,18 +371,17 @@
     private async Task OpenAsync()
     {
         await RefreshSuggestionsAsync(_inputText);
-        if (_suggestions.Any())
-        {
-            _open = true;
-            _highlightedIndex = -1;
-            _focusInputOnRender = true;
-        }
+        _open = true;
+        _highlightedIndex = -1;
+        _focusInputOnRender = true;
     }
 
     private async Task SelectAsync(string item)
     {
+        _suppressBlur = false;
         _inputText = item;
         _open = false;
+        _focused = false;
         _highlightedIndex = -1;
         await CommitAsync(item);
     }

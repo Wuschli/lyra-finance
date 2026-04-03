@@ -76,7 +76,8 @@ public class Program
             .AddScoped<TransactionRepository>()
             .AddScoped<AccountNotificationService>()
             .AddSingleton<TransactionCategoryService>()
-            .AddSingleton<CategoryIconService>();
+            .AddSingleton<CategoryIconService>()
+            .AddScoped<CsvImportService>();
 
         builder.Services.AddTransient<IClaimsTransformation, UserClaimsTransformation>();
 

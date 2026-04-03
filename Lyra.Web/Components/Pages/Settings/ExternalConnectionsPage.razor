@@ -15,6 +15,22 @@
 
 <MudText Typo="Typo.h5" Class="mb-4">External Connections</MudText>
 
+@if (!string.IsNullOrEmpty(Error))
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4" ShowCloseIcon="true" CloseIconClicked="DismissError">
+        @if (!string.IsNullOrEmpty(ErrorDescription))
+        {
+            @ErrorDescription
+        }
+        else
+        {
+            <span>Authorization failed: <strong>@Error</strong></span>
+        }
+    </MudAlert>
+}
+
+<MudText Typo="Typo.h5" Class="mb-4">External Connections</MudText>
+
 @if (_loading)
 {
     <MudProgressLinear Indeterminate="true" Class="mb-4"/>
@@ -216,6 +232,15 @@ else
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error_description")]
+    public string? ErrorDescription { get; set; }
+
+    [SupplyParameterFromQuery(Name = "new_connection")]
+    public Guid? NewConnection { get; set; }
+
     private bool _loading = true;
     private List<ExternalConnection> _connections = new();
 
@@ -231,6 +256,12 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadDataAsync();
+
+        if (NewConnection.HasValue && _connections.Any(c => c.Id == NewConnection.Value))
+        {
+            NavigationManager.NavigateTo("/settings/connections", replace: true);
+            _ = SyncConnectionAsync(NewConnection.Value);
+        }
     }
 
     private async Task LoadDataAsync()
@@ -273,14 +304,14 @@ else
         nameof(SyncStatus.SessionExpired) => Color.Warning,
         nameof(SyncStatus.Failure) => Color.Error,
         _ => Color.Default
-        };
+    };
 
     private static string GetSyncLogIcon(string status) => status switch
     {
         nameof(SyncStatus.Success) => Icons.Material.Filled.CheckCircle,
         nameof(SyncStatus.SessionExpired) => Icons.Material.Filled.Warning,
         _ => Icons.Material.Filled.Error
-        };
+    };
 
     private async Task RenameConnectionAsync(ExternalConnection conn, string newName)
     {
@@ -462,5 +493,12 @@ else
 
         if (result is { Canceled: false, Data: true })
             await LoadDataAsync();
+    }
+
+    private void DismissError()
+    {
+        Error = null;
+        ErrorDescription = null;
+        NavigationManager.NavigateTo("/settings/connections", replace: true);
     }
 }

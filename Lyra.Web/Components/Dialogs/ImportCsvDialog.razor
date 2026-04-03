@@ -1,0 +1,601 @@
+﻿@using Lyra.Core.Models
+@using Lyra.Core.Services
+@using Lyra.Core.Services.CsvImport
+@using MudBlazor
+@using System.Globalization
+@inject CsvImportService CsvImportService
+@inject AccountService AccountService
+
+<style>
+    table {
+        table-layout: fixed;
+        width: 100%;
+    }
+
+    td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .preview-cell-number {
+        width: 32px;
+        min-width: 32px;
+        color: #999;
+        font-size: 0.75rem;
+        padding-right: 8px;
+    }
+
+    .preview-cell {
+        font-size: 0.78rem;
+        cursor: pointer;
+    }
+
+    .preview-cell-selected {
+        outline: 2px solid #1976d2;
+        background: rgba(25, 118, 210, 0.12);
+        border-radius: 3px;
+    }
+</style>
+
+<MudDialog Style="min-width: min(860px, 95vw);">
+<DialogContent>
+
+    @* ── Step 1: File upload ── *@
+    @if (_step == Step.Upload)
+    {
+        <MudText Typo="Typo.body2" Class="mb-4">
+            Select a CSV export file from your bank. After uploading, you can map the CSV columns
+            to the required fields before importing.
+        </MudText>
+
+        <MudFileUpload T="IBrowserFile"
+                       FilesChanged="OnFileSelected"
+                       Accept=".csv,.txt"
+                       MaximumFileCount="1">
+            <CustomContent>
+                <MudButton Variant="Variant.Outlined"
+                           StartIcon="@Icons.Material.Filled.UploadFile"
+                           Color="Color.Primary"
+                           OnClick="@context.OpenFilePickerAsync">
+                    Choose CSV file
+                </MudButton>
+            </CustomContent>
+            <SelectedTemplate>
+                @if (context != null)
+                {
+                    <MudText Typo="Typo.body2" Class="mt-2">
+                        <MudIcon Icon="@Icons.Material.Filled.InsertDriveFile" Size="Size.Small" Class="me-1"/>
+                        @context.Name (@((context.Size / 1024.0).ToString("N1")) KB)
+                    </MudText>
+                }
+            </SelectedTemplate>
+        </MudFileUpload>
+
+        <MudStack Row="true" Class="mt-4" Spacing="3">
+            <MudNumericField T="int"
+                             Value="_skipTop"
+                             ValueChanged="@(v => { _skipTop = v; UpdatePreview(); })"
+                             Label="Skip rows at top (before header)"
+                             Min="0" Max="100"
+                             Variant="Variant.Outlined"
+                             Margin="Margin.Dense"
+                             Style="max-width: 260px;"
+                             Immediate="true"/>
+
+            <MudNumericField T="int"
+                             Value="_skipBottom"
+                             ValueChanged="@(v => { _skipBottom = v; UpdatePreview(); })"
+                             Label="Skip rows at bottom (footer)"
+                             Min="0" Max="100"
+                             Variant="Variant.Outlined"
+                             Margin="Margin.Dense"
+                             Style="max-width: 260px;"
+                             Immediate="true"/>
+        </MudStack>
+
+        @* ── Raw file preview ── *@
+        @if (_rawPreviewLines.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-4 mb-1">File Preview</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                <span style="display: inline-block; width: 12px; height: 12px; background: #f44336; opacity: .35; border-radius: 2px; margin-right: 4px; vertical-align: middle;"></span>Skipped &nbsp;
+                <span style="display: inline-block; width: 12px; height: 12px; background: #4caf50; opacity: .25; border-radius: 2px; margin-right: 4px; vertical-align: middle;"></span>Header &nbsp;
+                <span style="display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 4px; vertical-align: middle;"></span>Data
+            </MudText>
+            <div style="max-height: 260px; overflow-y: auto;">
+                <MudSimpleTable Dense="true" Hover="false" Elevation="0" Class="csv-preview-wrap">
+                    <tbody>
+                    @for (int i = 0; i < _rawPreviewLines.Count; i++)
+                    {
+                        var lineIndex = i; // capture for lambda
+                        var (bgColor, textColor) = GetPreviewRowStyle(lineIndex);
+                        <tr style="background: @bgColor; opacity: @GetPreviewRowOpacity(lineIndex);">
+                            <td class="preview-cell-number">@(i + 1)</td>
+                            @for (int j = 0; j < _rawPreviewLines[lineIndex].Length; j++)
+                            {
+                                var colIndex = j; // capture for lambda
+                                var isSelected = _balanceSourceRow == lineIndex && _balanceSourceCol == colIndex;
+                                <td class="preview-cell @(isSelected ? "preview-cell-selected" : "")"
+                                    style="color: @textColor;"
+                                    title="@_rawPreviewLines[lineIndex][colIndex]"
+                                    @onclick="() => OnBalanceCellClicked(lineIndex, colIndex)">
+                                    @_rawPreviewLines[lineIndex][colIndex]
+                                </td>
+                            }
+                        </tr>
+                    }
+                    </tbody>
+                </MudSimpleTable>
+            </div>
+
+            @* ── Closing balance picker ── *@
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-3" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Size="Size.Small" Color="Color.Primary"/>
+                <MudText Typo="Typo.caption">
+                    @if (_manualBalance.HasValue)
+                    {
+                        <span>
+                            Closing balance: <strong>@_manualBalance.Value.ToString("N2")</strong>
+                            (row @(_balanceSourceRow + 1), col @(_balanceSourceCol + 1))
+                        </span>
+                        <MudIconButton Icon="@Icons.Material.Filled.Clear"
+                                       Size="Size.Small"
+                                       OnClick="ClearBalanceSelection"
+                                       Title="Clear selection"/>
+                    }
+                    else
+                    {
+                        <span style="color: #999;">Click any cell in the preview to use its value as the closing balance.</span>
+                    }
+                </MudText>
+            </MudStack>
+        }
+
+        @if (_errorMessage != null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-3">@_errorMessage</MudAlert>
+        }
+    }
+
+    @* ── Step 2: Column mapping ── *@
+    else if (_step == Step.Mapping && _readResult != null)
+    {
+        <MudText Typo="Typo.body2" Class="mb-1">
+            Map each CSV column to the corresponding field. Columns set to
+            <em>Ignore</em> will not be imported.
+        </MudText>
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-4">
+            <strong>@_readResult.Rows.Count</strong> rows detected.
+            <strong>Amount</strong> and at least one <strong>date</strong> field are required.
+        </MudText>
+
+        <MudSimpleTable Dense="true" Hover="false" Elevation="0" Class="mb-4">
+            <thead>
+            <tr>
+                <th style="width: 40%">CSV column</th>
+                <th style="width: 35%">Maps to</th>
+                <th>Preview</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var header in _readResult.Headers)
+            {
+                <tr>
+                    <td>
+                        <MudText Typo="Typo.body2">
+                            <strong>@header</strong>
+                        </MudText>
+                    </td>
+                    <td>
+                        <MudSelect T="CsvTargetField"
+                                   Value="_mappings[header]"
+                                   ValueChanged="v => _mappings[header] = v"
+                                   Variant="Variant.Outlined"
+                                   Margin="Margin.Dense"
+                                   Dense="true">
+                            @foreach (CsvTargetField field in Enum.GetValues<CsvTargetField>())
+                            {
+                                <MudSelectItem Value="field">@FieldLabel(field)</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </td>
+                    <td>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary"
+                                 Style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; display: block;">
+                            @PreviewValue(header)
+                        </MudText>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </MudSimpleTable>
+
+        @* ── Closing balance summary / override ── *@
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Size="Size.Small" Color="Color.Primary"/>
+            @if (_manualBalance.HasValue)
+            {
+                <MudText Typo="Typo.caption">
+                    Closing balance after import: <strong>@_manualBalance.Value.ToString("N2")</strong>
+                    (selected in file preview)
+                </MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Clear"
+                               Size="Size.Small"
+                               OnClick="ClearBalanceSelection"
+                               Title="Clear"/>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    No closing balance selected. Go back to pick a cell from the file preview.
+                </MudText>
+            }
+        </MudStack>
+
+        @if (_mappingError != null)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mt-2">@_mappingError</MudAlert>
+        }
+    }
+
+    @* ── Step 3: Importing ── *@
+    else if (_step == Step.Importing)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mb-4"/>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Importing transactions…</MudText>
+    }
+
+    @* ── Step 4: Result ── *@
+    else if (_step == Step.Done && _result != null)
+    {
+        <MudAlert Severity="@(_result.Errors.Count > 0 ? Severity.Warning : Severity.Success)" Class="mb-3">
+            <strong>@_result.Imported</strong> transactions imported,
+            <strong>@_result.Skipped</strong> skipped (duplicates).
+        </MudAlert>
+
+        @if (_balanceApplied && _result.DetectedClosingBalance.HasValue)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-3">
+                Account balance updated to <strong>@_result.DetectedClosingBalance.Value.ToString("N2")</strong>.
+            </MudAlert>
+        }
+
+        @if (_result.Errors.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Warnings / parse errors</MudText>
+            <MudList T="string" Dense="true">
+                @foreach (var error in _result.Errors)
+                {
+                    <MudListItem Icon="@Icons.Material.Filled.Warning" IconColor="Color.Warning">
+                        @error
+                    </MudListItem>
+                }
+            </MudList>
+        }
+
+        @if (_result.SkippedRows.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Skipped duplicates</MudText>
+            <div style="overflow-y: auto; max-height: 220px;">
+                <MudSimpleTable Dense="true" Hover="false" Elevation="0">
+                    <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Counterparty</th>
+                        <th>Description</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in _result.SkippedRows)
+                    {
+                        <tr>
+                            <td><MudText Typo="Typo.caption" Color="Color.Secondary">@row.RowNumber</MudText></td>
+                            <td><MudText Typo="Typo.caption">@row.Date.ToString("dd.MM.yyyy")</MudText></td>
+                            <td><MudText Typo="Typo.caption">@row.Amount.ToString("N2") @row.Currency</MudText></td>
+                            <td><MudText Typo="Typo.caption">@row.CounterpartyName</MudText></td>
+                            <td><MudText Typo="Typo.caption" Color="Color.Secondary">@row.Description</MudText></td>
+                        </tr>
+                    }
+                    </tbody>
+                </MudSimpleTable>
+            </div>
+        }
+    }
+
+</DialogContent>
+
+<DialogActions>
+    @if (_step == Step.Upload)
+    {
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="_selectedFile == null || _loading"
+                   OnClick="ReadFileAsync"
+                   StartIcon="@Icons.Material.Filled.NavigateNext">
+            Next
+        </MudButton>
+    }
+    else if (_step == Step.Mapping)
+    {
+        <MudButton OnClick="@(() => _step = Step.Upload)">Back</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="StartImportAsync"
+                   StartIcon="@Icons.Material.Filled.FileUpload">
+            Import
+        </MudButton>
+    }
+    else if (_step == Step.Done)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Close">Close</MudButton>
+    }
+</DialogActions>
+</MudDialog>
+
+@code {
+
+    private enum Step
+    {
+        Upload,
+        Mapping,
+        Importing,
+        Done
+    }
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter, EditorRequired]
+    public Guid AccountId { get; set; }
+
+    private Step _step = Step.Upload;
+    private IBrowserFile? _selectedFile;
+    private bool _loading;
+    private string? _errorMessage;
+    private string? _mappingError;
+
+    private CsvReadResult? _readResult;
+    private Dictionary<string, CsvTargetField> _mappings = new();
+    private CsvImportResult? _result;
+
+    private int _skipTop = 0;
+    private int _skipBottom = 0;
+
+    // Raw preview state
+    private List<string[]> _rawPreviewLines = [];
+    private MemoryStream? _fileBuffer;
+
+    // Closing balance selection (picked from preview cells)
+    private decimal? _manualBalance;
+    private int _balanceSourceRow = -1;
+    private int _balanceSourceCol = -1;
+    private bool _balanceApplied;
+
+    private void OnFileSelected(IBrowserFile? file)
+    {
+        _selectedFile = file;
+        _errorMessage = null;
+        _rawPreviewLines = [];
+        _fileBuffer = null;
+        ClearBalanceSelection();
+
+        if (file != null)
+            _ = LoadPreviewAsync(file);
+    }
+
+    private async Task LoadPreviewAsync(IBrowserFile file)
+    {
+        try
+        {
+            const long maxBytes = 10 * 1024 * 1024;
+            await using var stream = file.OpenReadStream(maxBytes);
+            _fileBuffer = new MemoryStream();
+            await stream.CopyToAsync(_fileBuffer);
+            UpdatePreview();
+            StateHasChanged();
+        }
+        catch
+        {
+            // Preview is best-effort; errors shown on "Next"
+        }
+    }
+
+    private void UpdatePreview()
+    {
+        if (_fileBuffer == null) return;
+        _fileBuffer.Position = 0;
+        // Read extra lines to detect truncation
+        _rawPreviewLines = CsvImportService.ReadRawLines(_fileBuffer);
+        // Re-validate the balance selection in case row/col counts changed
+        ResolveBalanceFromSelection();
+    }
+
+    private void OnBalanceCellClicked(int row, int col)
+    {
+        if (_balanceSourceRow == row && _balanceSourceCol == col)
+        {
+            // Clicking the same cell again deselects it
+            ClearBalanceSelection();
+            return;
+        }
+
+        _balanceSourceRow = row;
+        _balanceSourceCol = col;
+        ResolveBalanceFromSelection();
+    }
+
+    private void ResolveBalanceFromSelection()
+    {
+        if (_balanceSourceRow < 0 || _balanceSourceCol < 0
+            || _balanceSourceRow >= _rawPreviewLines.Count
+            || _balanceSourceCol >= _rawPreviewLines[_balanceSourceRow].Length)
+        {
+            _manualBalance = null;
+            return;
+        }
+
+        var raw = _rawPreviewLines[_balanceSourceRow][_balanceSourceCol].Trim().Trim('"');
+
+        // Try to strip a trailing currency code (e.g. "0,00 EUR")
+        var parts = raw.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var numericPart = parts.Length >= 2 && parts[^1].Length == 3 ? parts[0] : raw;
+
+        foreach (var culture in new[] { new CultureInfo("de-DE"), CultureInfo.InvariantCulture })
+        {
+            if (decimal.TryParse(numericPart, NumberStyles.Number, culture, out var value))
+            {
+                _manualBalance = value;
+                return;
+            }
+        }
+
+        _manualBalance = null; // cell value is not a parseable number
+    }
+
+    private void ClearBalanceSelection()
+    {
+        _balanceSourceRow = -1;
+        _balanceSourceCol = -1;
+        _manualBalance = null;
+    }
+
+    /// <summary>Returns (backgroundColor, textColor) for a preview row.</summary>
+    private (string bg, string text) GetPreviewRowStyle(int index)
+    {
+        int total = _rawPreviewLines.Count;
+        int headerRow = _skipTop; // 0-based index of the header row after skipping
+
+        if (index < _skipTop || index >= total - _skipBottom)
+            return ("rgba(244,67,54,0.12)", "#b71c1c"); // red – skipped
+        if (index == headerRow)
+            return ("rgba(76,175,80,0.15)", "inherit"); // green – header
+        return ("transparent", "inherit"); // data
+    }
+
+    private string GetPreviewRowOpacity(int index)
+    {
+        int total = _rawPreviewLines.Count;
+        if (index < _skipTop || index >= total - _skipBottom)
+            return "0.6";
+        return "1";
+    }
+
+    private async Task ReadFileAsync()
+    {
+        if (_selectedFile == null) return;
+        _loading = true;
+        _errorMessage = null;
+
+        try
+        {
+            const long maxBytes = 10 * 1024 * 1024;
+
+            MemoryStream ms;
+            if (_fileBuffer != null)
+            {
+                // Reuse already-buffered data
+                ms = _fileBuffer;
+                ms.Position = 0;
+            }
+            else
+            {
+                await using var stream = _selectedFile.OpenReadStream(maxBytes);
+                // CsvHelper reads synchronously; copy to MemoryStream first
+                ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                ms.Position = 0;
+            }
+
+            _readResult = CsvImportService.ReadCsv(ms, _skipTop, _skipBottom);
+
+            if (_readResult.Headers.Count == 0)
+            {
+                _errorMessage = "No column headers could be detected in the file.";
+                return;
+            }
+
+            _mappings = CsvImportService.SuggestMappings(_readResult.Headers);
+            _step = Step.Mapping;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Could not read file: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task StartImportAsync()
+    {
+        _mappingError = null;
+
+        var mappingList = _mappings
+            .Where(kvp => kvp.Value != CsvTargetField.Ignore)
+            .Select(kvp => new CsvColumnMapping(kvp.Key, kvp.Value))
+            .ToList();
+
+        if (!mappingList.Any(m => m.TargetField == CsvTargetField.Amount))
+        {
+            _mappingError = "Please map at least one column to Amount.";
+            return;
+        }
+
+        bool hasDate = mappingList.Any(m =>
+            m.TargetField is CsvTargetField.BookingDate
+                or CsvTargetField.TransactionDate
+                or CsvTargetField.ValueDate);
+
+        if (!hasDate)
+        {
+            _mappingError = "Please map at least one column to a date field.";
+            return;
+        }
+
+        _step = Step.Importing;
+
+        try
+        {
+            _result = await CsvImportService.ImportAsync(AccountId, _readResult!.Rows, mappingList, _manualBalance);
+
+            if (_result.DetectedClosingBalance.HasValue)
+            {
+                await AccountService.UpdateBalanceAsync(AccountId, _result.DetectedClosingBalance.Value, DateTimeOffset.Now);
+                _balanceApplied = true;
+            }
+
+            _step = Step.Done;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Import failed: {ex.Message}";
+            _step = Step.Mapping;
+        }
+    }
+
+    private string PreviewValue(string header) =>
+        _readResult?.Rows.FirstOrDefault()?.Cells.GetValueOrDefault(header, string.Empty) ?? string.Empty;
+
+    private static string FieldLabel(CsvTargetField field) => field switch
+    {
+        CsvTargetField.Ignore => "— Ignore —",
+        CsvTargetField.BookingDate => "Booking Date",
+        CsvTargetField.TransactionDate => "Transaction Date",
+        CsvTargetField.ValueDate => "Value Date",
+        CsvTargetField.CounterpartyName => "Counterparty Name",
+        CsvTargetField.CounterpartyIban => "Counterparty IBAN",
+        CsvTargetField.Description => "Description",
+        CsvTargetField.Amount => "Amount",
+        CsvTargetField.Currency => "Currency",
+        CsvTargetField.ExternalIdentifier => "External Identifier (dedup key)",
+        _ => field.ToString()
+    };
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(_result?.Imported ?? 0));
+    private void Cancel() => MudDialog.Cancel();
+}

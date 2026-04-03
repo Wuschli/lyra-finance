@@ -1,0 +1,108 @@
+@using MudBlazor
+@using Lyra.Core.Models
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div style="height: @Height; width: 100%;" class="@Class">
+    <canvas id="@_canvasId"></canvas>
+</div>
+
+@code {
+
+    /// <summary>The transactions used to reconstruct the balance history.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<Transaction> Transactions { get; set; } = [];
+
+    /// <summary>The current known balance to walk backwards from.</summary>
+    [Parameter, EditorRequired]
+    public decimal? CurrentBalance { get; set; }
+
+    /// <summary>Number of days to display. Defaults to 30.</summary>
+    [Parameter]
+    public int Days { get; set; } = 30;
+
+    /// <summary>CSS height of the chart container. Defaults to 75px.</summary>
+    [Parameter]
+    public string Height { get; set; } = "75px";
+
+    /// <summary>Additional CSS classes applied to the container div.</summary>
+    [Parameter]
+    public string? Class { get; set; }
+
+    private readonly string _canvasId = $"balance-chart-{Guid.NewGuid():N}";
+    private bool _needsRender;
+
+    private record BalancePoint(DateTimeOffset Date, decimal Balance);
+
+    protected override void OnParametersSet()
+    {
+        _needsRender = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_needsRender)
+            return;
+
+        _needsRender = false;
+
+        var history = BuildBalanceHistory(Transactions, CurrentBalance, Days);
+        if (history.Count > 1)
+            await RenderChart(history);
+    }
+
+    private async Task RenderChart(List<BalancePoint> history)
+    {
+        var labels = history
+            .Select(p => p.Date.LocalDateTime.ToString("dd.MM."))
+            .ToArray();
+
+        var values = history
+            .Select(p => (double)p.Balance)
+            .ToArray();
+
+        await JS.InvokeVoidAsync("balanceChart.render", _canvasId, labels, values);
+    }
+
+    /// <summary>
+    /// Reconstructs the per-day closing balance for the last <paramref name="days"/> days
+    /// by walking backwards from the known current balance and subtracting transactions.
+    /// Pending transactions are excluded.
+    /// </summary>
+    private static List<BalancePoint> BuildBalanceHistory(
+        IReadOnlyList<Transaction> transactions,
+        decimal? currentBalance,
+        int days)
+    {
+        if (currentBalance is null || transactions.Count == 0)
+            return [];
+
+        var today = DateTimeOffset.UtcNow.Date;
+        var startDate = today.AddDays(-(days - 1));
+
+        var dailyDeltas = transactions
+            .Where(t => !t.IsPending && t.TransactionDate.LocalDateTime.Date >= startDate)
+            .GroupBy(t => t.TransactionDate.LocalDateTime.Date)
+            .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
+
+        var points = new List<BalancePoint>(days);
+        var balance = currentBalance.Value;
+
+        for (var i = 0; i < days; i++)
+        {
+            var date = today.AddDays(-i);
+            points.Add(new BalancePoint(new DateTimeOffset(date, TimeSpan.Zero), balance));
+
+            if (dailyDeltas.TryGetValue(date, out var delta))
+                balance -= delta;
+        }
+
+        points.Reverse();
+        return points;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await JS.InvokeVoidAsync("balanceChart.destroy", _canvasId);
+    }
+}

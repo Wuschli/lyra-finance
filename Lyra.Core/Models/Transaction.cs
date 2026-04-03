@@ -13,4 +13,5 @@ public class Transaction
     public DateTimeOffset? BookingDate { get; set; }
     public DateTimeOffset? ValueDate { get; set; }
     public string? Category { get; set; }
+    public bool IsPending { get; set; }
 }

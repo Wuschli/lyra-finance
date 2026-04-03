@@ -21,12 +21,15 @@ public class EnableBankingController : ControllerBase
 
     [HttpGet("callback")]
     [Authorize]
-    public async Task<IActionResult> Callback([FromQuery] Guid? state, [FromQuery] string? code, [FromQuery] string? error)
+    public async Task<IActionResult> Callback([FromQuery] Guid? state, [FromQuery] string? code, [FromQuery] string? error, [FromQuery] string? error_description)
     {
         if (!string.IsNullOrEmpty(error))
         {
-            _logger.LogWarning("Banking authorization failed: {Error}", error);
-            return Redirect($"/settings/connections?error={error}");
+            _logger.LogWarning("Banking authorization failed: {Error} – {ErrorDescription}", error, error_description);
+            var query = string.IsNullOrEmpty(error_description)
+                ? $"?error={Uri.EscapeDataString(error)}"
+                : $"?error={Uri.EscapeDataString(error)}&error_description={Uri.EscapeDataString(error_description)}";
+            return Redirect($"/settings/connections{query}");
         }
 
         if (state == null || string.IsNullOrEmpty(code))
@@ -37,7 +40,7 @@ public class EnableBankingController : ControllerBase
         try
         {
             await _bankingService.FinalizeConnectionAsync(state.Value, code);
-            return Redirect("/settings/connections");
+            return Redirect($"/settings/connections?new_connection={state.Value}");
         }
         catch (Exception ex)
         {

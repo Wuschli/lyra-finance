@@ -6,19 +6,19 @@
 @inject UserService UserService
 
 <style>
-    .tx-table-wrap table {
+    table {
         table-layout: fixed;
         width: 100%;
     }
 
-    .tx-cell-clip {
+    .cell-clip {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
-    .tx-cell-right  { text-align: right; }
-    .tx-cell-center { text-align: center; }
+    .cell-right  { text-align: right; }
+    .cell-center { text-align: center; }
 </style>
 
 @* ── Toolbar ── *@
@@ -96,8 +96,7 @@
           Hover="true"
           Striped="true"
           Dense="true"
-          Elevation="0"
-          Class="tx-table-wrap">
+          Elevation="0">
     <ColGroup>
         <col style="width: 100px;"/>
         @if (ShowAccountColumn)
@@ -110,31 +109,33 @@
         <col style="width: 115px;"/>
     </ColGroup>
     <HeaderContent>
-        <MudTh Class="tx-cell-center">Date</MudTh>
+        <MudTh Class="cell-center">Date</MudTh>
         @if (ShowAccountColumn)
         {
-            <MudTh Class="tx-cell-center">Account</MudTh>
+            <MudTh Class="cell-center">Account</MudTh>
         }
-        <MudTh Class="tx-cell-center">Counterparty</MudTh>
-        <MudTh Class="tx-cell-center">Description</MudTh>
-        <MudTh Class="tx-cell-center">Category</MudTh>
-        <MudTh Class="tx-cell-center">Amount</MudTh>
+        <MudTh Class="cell-center">Counterparty</MudTh>
+        <MudTh Class="cell-center">Description</MudTh>
+        <MudTh Class="cell-center">Category</MudTh>
+        <MudTh Class="cell-center">Amount</MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd DataLabel="Date" Class="tx-cell-clip">
-            <MudText Typo="Typo.body2" Color="Color.Default">
-                @context.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
-            </MudText>
+        <MudTd DataLabel="Date" Class="cell-clip">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                <MudText Typo="Typo.body2" Color="Color.Default">
+                    @context.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
+                </MudText>
+            </MudStack>
         </MudTd>
         @if (ShowAccountColumn)
         {
-            <MudTd DataLabel="Account" Class="tx-cell-clip">
+            <MudTd DataLabel="Account" Class="cell-clip">
                 <MudText Typo="Typo.body2" Color="Color.Default">
                     @AccountName(context.AccountId)
                 </MudText>
             </MudTd>
         }
-        <MudTd DataLabel="Counterparty" Class="tx-cell-clip">
+        <MudTd DataLabel="Counterparty" Class="cell-clip">
             <MudText Typo="Typo.body2" Color="Color.Default">
                 <strong>@context.CounterpartyName</strong>
             </MudText>
@@ -143,19 +144,29 @@
                 <MudText Typo="Typo.caption" Color="Color.Default">@context.CounterpartyIban</MudText>
             }
         </MudTd>
-        <MudTd DataLabel="Description" Class="tx-cell-wrap">
+        <MudTd DataLabel="Description" Class="cell-wrap">
             <MudText Typo="Typo.body2" Color="Color.Default">@context.Description</MudText>
         </MudTd>
-        <MudTd DataLabel="Category" Class="tx-cell-center">
+        <MudTd DataLabel="Category" Class="cell-center">
             <CategoryInput Value="@context.Category"
                            SearchFunc="SearchCategoriesAsync"
                            OnCommit="@(cat => SetCategoryAsync(context, cat))"/>
         </MudTd>
-        <MudTd DataLabel="Amount" Class="tx-cell-clip tx-cell-right">
-            <MudText Typo="Typo.body2"
-                     Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
-                <strong>@context.Amount.ToString("N2") €</strong>
-            </MudText>
+        <MudTd DataLabel="Amount" Class="cell-clip cell-right">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.FlexEnd" Spacing="1">
+                @if (context.IsPending)
+                {
+                    <MudTooltip Text="Pending">
+                        <MudIcon Icon="@Icons.Material.Outlined.Schedule"
+                                 Size="Size.Small"
+                                 Color="Color.Warning"/>
+                    </MudTooltip>
+                }
+                <MudText Typo="Typo.body2"
+                         Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
+                    <strong>@context.Amount.ToString("N2") €</strong>
+                </MudText>
+            </MudStack>
         </MudTd>
     </RowTemplate>
     <NoRecordsContent>

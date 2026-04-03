@@ -14,3 +14,6 @@ CREATE OR REPLACE TRIGGER trg_transactions_updated_at
     BEFORE UPDATE ON lyra.transactions
     FOR EACH ROW
     EXECUTE FUNCTION lyra.set_updated_at();
+
+ALTER TABLE lyra.transactions
+    ADD COLUMN IF NOT EXISTS is_pending boolean NOT NULL DEFAULT false;

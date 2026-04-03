@@ -3,7 +3,6 @@ window.balanceChart = (() => {
 
     const COLOR_POS = '#4caf50';
     const COLOR_NEG = '#f44336';
-    const COLOR_GRID = 'rgba(128,128,128,0.15)';
     const COLOR_ZERO = 'rgba(128,128,128,0.4)';
 
     function segmentColor(ctx) {
@@ -17,24 +16,17 @@ window.balanceChart = (() => {
         return value < 0 ? COLOR_NEG : COLOR_POS;
     }
 
-    function buildAnnotations(values) {
-        const min = Math.floor(Math.min(...values) / 100) * 100;
-        const max = Math.ceil(Math.max(...values) / 100) * 100;
-        const annotations = {};
-
-        for (let v = min; v <= max; v += 100) {
-            const isZero = v === 0;
-            annotations[`line_${v}`] = {
+    function buildAnnotations() {
+        return {
+            line_0: {
                 type: 'line',
-                yMin: v,
-                yMax: v,
-                borderColor: isZero ? COLOR_ZERO : COLOR_GRID,
-                borderWidth: isZero ? 1.5 : 1,
-                borderDash: isZero ? [] : [4, 4],
-            };
-        }
-
-        return annotations;
+                yMin: 0,
+                yMax: 0,
+                borderColor: COLOR_ZERO,
+                borderWidth: 1.5,
+                borderDash: [],
+            },
+        };
     }
 
     function render(canvasId, labels, values) {
@@ -83,7 +75,7 @@ window.balanceChart = (() => {
                         }
                     },
                     annotation: {
-                        annotations: buildAnnotations(values),
+                        annotations: buildAnnotations(),
                     },
                 },
                 scales: {

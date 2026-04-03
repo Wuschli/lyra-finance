@@ -9,11 +9,16 @@ public class AccountService
 {
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly AuthenticationStateProvider _authStateProvider;
+    private readonly AccountNotificationService _accountNotificationService;
 
-    public AccountService(IDbConnectionFactory connectionFactory, AuthenticationStateProvider authStateProvider)
+    public AccountService(
+        IDbConnectionFactory connectionFactory,
+        AuthenticationStateProvider authStateProvider,
+        AccountNotificationService accountNotificationService)
     {
         _connectionFactory = connectionFactory;
         _authStateProvider = authStateProvider;
+        _accountNotificationService = accountNotificationService;
     }
 
     public async Task<IEnumerable<Account>> GetAccountsForCurrentUserAsync()
@@ -65,5 +70,19 @@ public class AccountService
             WHERE id = @Id;";
 
         await connection.ExecuteAsync(sql, new { Id = accountId, Name = newName });
+    }
+
+    public async Task UpdateBalanceAsync(Guid accountId, decimal balance, DateTimeOffset balanceAt)
+    {
+        using var connection = await _connectionFactory.CreateConnectionAsync();
+
+        const string sql = @"
+            UPDATE lyra.accounts
+            SET current_balance = @Balance,
+                current_balance_at = @BalanceAt
+            WHERE id = @Id;";
+
+        await connection.ExecuteAsync(sql, new { Id = accountId, Balance = balance, BalanceAt = balanceAt });
+        await _accountNotificationService.NotifyAccountsChangedAsync();
     }
 }

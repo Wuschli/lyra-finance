@@ -424,7 +424,7 @@ public class EnableBankingService
 
                     // Collect all balance types returned by the API for this account.
                     foreach (var balanceType in balance?.Balances?.Select(b => b.BalanceType?.ToString()).OfType<string>() ?? [])
-                        discoveredBalanceTypes.Add(balanceType);
+                    discoveredBalanceTypes.Add(balanceType);
 
                     // On the first sync of a new connection (BalanceType not yet set), auto-select
                     // the first available balance type returned by the API.
@@ -444,11 +444,28 @@ public class EnableBankingService
                         await UpdateAccountBalance(accountId, balance, externalConnection.BalanceType, logBuilder);
                     }
 
-                    var transactions = await _client.Accounts[externalAccountId.Value].Transactions.GetAsync();
 
-                    await UpsertExternalTransactions(accountId, iban, transactions?.Transactions ?? Enumerable.Empty<EnableBanking.Models.Transaction>(), logBuilder);
+                    var allTransactions = new List<EnableBanking.Models.Transaction>();
+                    string? continuationKey = null;
+
+                    do
+                    {
+                        var page = await _client.Accounts[externalAccountId.Value].Transactions.GetAsync(q =>
+                        {
+                            if (continuationKey != null)
+                                q.QueryParameters.ContinuationKey = continuationKey;
+                        });
+
+                        if (page?.Transactions != null)
+                            allTransactions.AddRange(page.Transactions);
+
+                        continuationKey = page?.ContinuationKey;
+                        logBuilder.AppendLine($"Account {accountId}: Fetched page with {page?.Transactions?.Count ?? 0} transactions, continuation_key: {continuationKey ?? "none"}.");
+                    } while (!string.IsNullOrEmpty(continuationKey));
+
+                    await UpsertExternalTransactions(accountId, iban, allTransactions, logBuilder);
                 }
-                catch (ErrorResponse ex) when (ex.Error is ErrorCode.EXPIRED_SESSION or ErrorCode.CLOSED_SESSION or ErrorCode.REVOKED_SESSION)
+                catch (ErrorResponse ex) when (ex.Error is ErrorCode.EXPIRED_SESSION or ErrorCode.CLOSED_SESSION or ErrorCode.REVOKED_SESSION or ErrorCode.ASPSP_ERROR)
                 {
                     // Session errors are fatal — re-throw so the outer catch can mark the connection as expired.
                     throw;
@@ -467,7 +484,7 @@ public class EnableBankingService
             if (status == SyncStatus.InProgress)
                 status = SyncStatus.Success;
         }
-        catch (ErrorResponse ex) when (ex.Error is ErrorCode.EXPIRED_SESSION or ErrorCode.CLOSED_SESSION or ErrorCode.REVOKED_SESSION)
+        catch (ErrorResponse ex) when (ex.Error is ErrorCode.EXPIRED_SESSION or ErrorCode.CLOSED_SESSION or ErrorCode.REVOKED_SESSION or ErrorCode.ASPSP_ERROR)
         {
             status = SyncStatus.SessionExpired;
             logBuilder.AppendLine($"Session expired (code: {ex.Error}): {ex.Message}");
@@ -594,6 +611,9 @@ public class EnableBankingService
         string counterpartyName,
         string counterpartyIban)
     {
+        if (!string.IsNullOrWhiteSpace(transaction.EntryReference))
+            return TransactionWithExternalIdentifier.FormatEntryReference(accountId, transaction.EntryReference);
+
         return TransactionWithExternalIdentifier.ComputeHash(
             accountId,
             creditDebitIndicator: transaction.CreditDebitIndicator?.ToString() ?? string.Empty,
@@ -621,9 +641,9 @@ public class EnableBankingService
 
         const string sql = @"
             INSERT INTO lyra.transactions
-                (account_id, counterparty_name, counterparty_iban, description, amount, currency, transaction_date, booking_date, value_date, external_identifier)
+                (account_id, counterparty_name, counterparty_iban, description, amount, currency, transaction_date, booking_date, value_date, external_identifier, is_pending)
             VALUES
-                (@AccountId, @CounterpartyName, @CounterpartyIban, @Description, @Amount, @Currency, @TransactionDate, @BookingDate, @ValueDate, @ExternalIdentifier)
+                (@AccountId, @CounterpartyName, @CounterpartyIban, @Description, @Amount, @Currency, @TransactionDate, @BookingDate, @ValueDate, @ExternalIdentifier, @IsPending)
             ON CONFLICT (account_id, external_identifier)
             DO UPDATE SET
                 counterparty_name = EXCLUDED.counterparty_name,
@@ -633,11 +653,15 @@ public class EnableBankingService
                 currency = EXCLUDED.currency,
                 transaction_date = EXCLUDED.transaction_date,
                 booking_date = EXCLUDED.booking_date,
-                value_date = EXCLUDED.value_date;";
+                value_date = EXCLUDED.value_date,
+                is_pending = EXCLUDED.is_pending;";
 
         var parameters = transactionList.Select(transaction =>
         {
-            var transactionDate = transaction.TransactionDate.ToDateTimeOrNull() ?? transaction.BookingDate.ToDateTimeOrNull() ?? DateTime.MinValue;
+            var isPending = transaction.Status != TransactionStatus.BOOK;
+            var transactionDate = transaction.TransactionDate.ToDateTimeOrNull()
+                                  ?? transaction.BookingDate.ToDateTimeOrNull()
+                                  ?? (isPending ? DateTime.Now : DateTime.MinValue);
             var currency = transaction.TransactionAmount?.Currency ?? string.Empty;
 
             var counterpartyName = transaction.Creditor?.Name ?? transaction.CreditorAgent?.Name ?? string.Empty;
@@ -651,7 +675,7 @@ public class EnableBankingService
             if (counterpartyIban == iban)
             {
                 counterpartyName = transaction.Debtor?.Name ?? transaction.DebtorAgent?.Name ?? string.Empty;
-                counterpartyIban = transaction.CreditorAccount?.Iban ?? string.Empty;
+                counterpartyIban = transaction.DebtorAccount?.Iban ?? string.Empty;
             }
             else
             {
@@ -669,7 +693,8 @@ public class EnableBankingService
                 TransactionDate = transactionDate,
                 BookingDate = transaction.BookingDate.ToDateTimeOrNull(),
                 ValueDate = transaction.ValueDate.ToDateTimeOrNull(),
-                ExternalIdentifier = GenerateTransactionHash(transaction, accountId, counterpartyName, counterpartyIban)
+                ExternalIdentifier = GenerateTransactionHash(transaction, accountId, counterpartyName, counterpartyIban),
+                IsPending = isPending
             };
         }).ToList();
 
@@ -680,6 +705,7 @@ public class EnableBankingService
     /// <summary>
     /// Recomputes the external_identifier for all transactions linked to the given connection
     /// and updates rows whose stored hash differs from the current algorithm.
+    /// Rows that were identified via EntryReference are skipped — their identifier is already stable.
     /// If two rows would get the same new hash (duplicate), the older one is deleted.
     /// Returns the number of updated/deleted rows.
     /// </summary>
@@ -698,8 +724,13 @@ public class EnableBankingService
         var rows = (await connection.QueryAsync<(Guid Id, Guid AccountId, string CounterpartyName, string CounterpartyIban, decimal Amount, string Currency, string? Description, string? ExternalIdentifier, DateTimeOffset TransactionDate)>(
             fetchSql, new { ConnectionId = externalConnectionId })).ToList();
 
-        // Compute new hash for every row, then group to find collisions.
-        var withNewHash = rows.Select(row => (
+        // Rows identified by EntryReference are already stable — skip them entirely.
+        var hashRows = rows
+            .Where(r => !TransactionWithExternalIdentifier.IsEntryReferenceBased(r.ExternalIdentifier))
+            .ToList();
+
+        // Compute new hash for every remaining row, then group to find collisions.
+        var withNewHash = hashRows.Select(row => (
             row.Id,
             row.AccountId,
             row.TransactionDate,

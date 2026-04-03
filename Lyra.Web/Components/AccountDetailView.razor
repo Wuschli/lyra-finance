@@ -2,18 +2,28 @@
 @using Lyra.Core.EnableBanking.Models
 @using Lyra.Core.Models
 @using Lyra.Core.Services
+@using Lyra.Web.Components.Dialogs
 @using MudBlazor
 @using Transaction = Lyra.Core.Models.Transaction
 @inject TransactionRepository TransactionRepository
 @inject UserService UserService
 @inject EnableBankingService EnableBankingService
-@inject IJSRuntime JS
+@inject IDialogService DialogService
+@inject AccountService AccountService
+@inject AccountNotificationService AccountNotificationService
 @implements IAsyncDisposable
 
 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-1">
     <MudText Typo="Typo.h4">
         <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="me-2 mb-1"/>@Account.Name
     </MudText>
+    <MudButton Variant="Variant.Outlined"
+               StartIcon="@Icons.Material.Filled.UploadFile"
+               Color="Color.Primary"
+               Size="Size.Small"
+               OnClick="OpenImportDialog">
+        Import CSV
+    </MudButton>
 </MudStack>
 
 @if (Account.CurrentBalance.HasValue)
@@ -36,12 +46,9 @@
 }
 else
 {
-    @if (_balanceHistory.Count > 1)
-    {
-        <div style="height: 75px; width: 100%;" class="mb-2">
-            <canvas id="@_canvasId"></canvas>
-        </div>
-    }
+    <BalanceChart Transactions="_transactions"
+                  CurrentBalance="Account.CurrentBalance"
+                  Class="mb-2"/>
 
     <TransactionTable
         Transactions="_transactions"
@@ -60,34 +67,24 @@ else
     private List<Transaction>? _transactions;
     private List<string> _allCategories = new();
 
-    private List<BalancePoint> _balanceHistory = new();
-
-    private readonly string _canvasId = $"balance-chart-{Guid.NewGuid():N}";
-
-    private record BalancePoint(DateTimeOffset Date, decimal Balance);
+    protected override async Task OnInitializedAsync()
+    {
+        AccountNotificationService.OnAccountsChanged += OnAccountsChangedAsync;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
         await LoadData();
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private async Task OnAccountsChangedAsync()
     {
-        if (_balanceHistory.Count > 1)
-            await RenderChart();
-    }
+        var accounts = (await AccountService.GetAccountsForCurrentUserAsync()).ToList();
+        var updated = accounts.FirstOrDefault(a => a.Id == Account.Id);
+        if (updated != null)
+            Account = updated;
 
-    private async Task RenderChart()
-    {
-        var labels = _balanceHistory
-            .Select(p => p.Date.LocalDateTime.ToString("dd.MM."))
-            .ToArray();
-
-        var values = _balanceHistory
-            .Select(p => (double)p.Balance)
-            .ToArray();
-
-        await JS.InvokeVoidAsync("balanceChart.render", _canvasId, labels, values);
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadData()
@@ -95,56 +92,30 @@ else
         var userId = await UserService.GetCurrentUserId();
         _transactions = (await TransactionRepository.GetTransactionsByAccountAsync(Account.Id)).ToList();
         _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
-        _balanceHistory = BuildBalanceHistory(_transactions, Account.CurrentBalance, 30);
-    }
-
-    /// <summary>
-    /// Reconstructs the per-day closing balance for the last <paramref name="days"/> days
-    /// by walking backwards from the known current balance and subtracting transactions.
-    /// </summary>
-    private static List<BalancePoint> BuildBalanceHistory(
-        List<Transaction> transactions,
-        decimal? currentBalance,
-        int days)
-    {
-        if (currentBalance is null || transactions.Count == 0)
-            return new();
-
-        var today = DateTimeOffset.UtcNow.Date;
-        var startDate = today.AddDays(-(days - 1));
-
-        // Group net transaction amounts by local date
-        var dailyDeltas = transactions
-            .Where(t => t.TransactionDate.LocalDateTime.Date >= startDate)
-            .GroupBy(t => t.TransactionDate.LocalDateTime.Date)
-            .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
-
-        // Walk backwards from today: start with the current balance and undo each day's transactions
-        var points = new List<BalancePoint>(days);
-        var balance = currentBalance.Value;
-
-        for (var i = 0; i < days; i++)
-        {
-            var date = today.AddDays(-i);
-            points.Add(new BalancePoint(new DateTimeOffset(date, TimeSpan.Zero), balance));
-
-            if (dailyDeltas.TryGetValue(date, out var delta))
-                balance -= delta;
-        }
-
-        points.Reverse();
-        return points;
     }
 
     private async Task OnCategoryChanged(Transaction tx)
     {
-        // Re-fetch suggestions so the list stays fresh after any assignment
         var userId = await UserService.GetCurrentUserId();
         _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
     }
 
+    private async Task OpenImportDialog()
+    {
+        var parameters = new DialogParameters<ImportCsvDialog>
+        {
+            { x => x.AccountId, Account.Id }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<ImportCsvDialog>("Import CSV transactions", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false })
+            await LoadData();
+    }
+
     public async ValueTask DisposeAsync()
     {
-        await JS.InvokeVoidAsync("balanceChart.destroy", _canvasId);
+        AccountNotificationService.OnAccountsChanged -= OnAccountsChangedAsync;
     }
 }
