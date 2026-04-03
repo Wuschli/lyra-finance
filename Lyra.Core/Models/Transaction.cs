@@ -14,4 +14,5 @@ public class Transaction
     public DateTimeOffset? ValueDate { get; set; }
     public string? Category { get; set; }
     public bool IsPending { get; set; }
+    public Guid? LinkedTransactionId { get; set; }
 }

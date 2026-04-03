@@ -231,7 +231,7 @@
     private static List<CategoryDataPoint> BuildCategoryData(IEnumerable<Transaction> transactions)
     {
         return transactions
-            .Where(t => t.Amount < 0)
+            .Where(t => t.Amount < 0 && t.LinkedTransactionId == null)
             .GroupBy(t => string.IsNullOrWhiteSpace(t.Category) ? "Uncategorized" : t.Category)
             .Select(g => new CategoryDataPoint(g.Key, Math.Abs(g.Sum(t => t.Amount))))
             .OrderByDescending(x => x.Value)

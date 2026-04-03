@@ -1,9 +1,11 @@
 ﻿@using Lyra.Core.Models
 @using Lyra.Core.Services
+@using Lyra.Web.Components.Dialogs
 @using MudBlazor
 @using Lyra.Core
 @inject TransactionRepository TransactionRepository
 @inject UserService UserService
+@inject IDialogService DialogService
 
 <style>
     table {
@@ -107,6 +109,7 @@
         <col/>
         <col style="width: 250px;"/>
         <col style="width: 115px;"/>
+        <col style="width: 44px;"/>
     </ColGroup>
     <HeaderContent>
         <MudTh Class="cell-center">Date</MudTh>
@@ -118,6 +121,7 @@
         <MudTh Class="cell-center">Description</MudTh>
         <MudTh Class="cell-center">Category</MudTh>
         <MudTh Class="cell-center">Amount</MudTh>
+        <MudTh/>
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Date" Class="cell-clip">
@@ -162,11 +166,39 @@
                                  Color="Color.Warning"/>
                     </MudTooltip>
                 }
+                @if (context.LinkedTransactionId.HasValue)
+                {
+                    <MudTooltip Text="Internal transfer">
+                        <MudIcon Icon="@Icons.Material.Filled.SwapHoriz"
+                                 Size="Size.Small"
+                                 Color="Color.Info"/>
+                    </MudTooltip>
+                }
                 <MudText Typo="Typo.body2"
                          Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
                     <strong>@context.Amount.ToString("N2") €</strong>
                 </MudText>
             </MudStack>
+        </MudTd>
+        <MudTd Class="cell-center" Style="padding: 0;">
+            @if (context.LinkedTransactionId.HasValue)
+            {
+                <MudTooltip Text="Remove transfer link">
+                    <MudIconButton Icon="@Icons.Material.Filled.LinkOff"
+                                   Size="Size.Small"
+                                   Color="Color.Default"
+                                   OnClick="@(() => UnlinkAsync(context))"/>
+                </MudTooltip>
+            }
+            else if (context.Amount > 0 && _transferCandidateIds.Contains(context.Id))
+            {
+                <MudTooltip Text="Link as internal transfer">
+                    <MudIconButton Icon="@Icons.Material.Filled.Link"
+                                   Size="Size.Small"
+                                   Color="Color.Default"
+                                   OnClick="@(() => OpenLinkDialogAsync(context))"/>
+                </MudTooltip>
+            }
         </MudTd>
     </RowTemplate>
     <NoRecordsContent>
@@ -206,6 +238,10 @@
     [Parameter]
     public EventCallback<Transaction> OnCategoryChanged { get; set; }
 
+    /// <summary>Raised after a transfer link has been created or removed.</summary>
+    [Parameter]
+    public EventCallback OnTransferLinkChanged { get; set; }
+
     /// <summary>Pre-selects the category filter on first render. Supplied via query string.</summary>
     [Parameter]
     public string? InitialCategory { get; set; }
@@ -224,9 +260,15 @@
 
     private bool _initialCategoryApplied;
 
+    /// <summary>
+    /// IDs of unlinked income transactions that have at least one transfer candidate in the DB.
+    /// Used to gate visibility of the link button without a per-row DB call.
+    /// </summary>
+    private HashSet<Guid> _transferCandidateIds = [];
+
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         if (AllCategories.Count > 0)
             _allCategories = AllCategories.ToList();
@@ -240,6 +282,8 @@
             _categoryFilter = new List<string> { filterValue };
             _initialCategoryApplied = true;
         }
+
+        await RefreshCandidateIdsAsync();
     }
 
     // ── Filter delegate ──────────────────────────────────────────────────────
@@ -300,6 +344,18 @@
         return Task.FromResult(results);
     }
 
+    private async Task RefreshCandidateIdsAsync()
+    {
+        var userId = await UserService.GetCurrentUserId();
+
+        var incomeTransactions = Transactions
+            .Where(t => t.Amount > 0 && t.LinkedTransactionId == null)
+            .ToList();
+
+        _transferCandidateIds = await TransactionRepository.FindTransferCandidateSourceIdsAsync(
+            userId, incomeTransactions);
+    }
+
     // ── Actions ──────────────────────────────────────────────────────────────
 
     private async Task SetCategoryAsync(Transaction tx, string? category)
@@ -307,11 +363,60 @@
         await TransactionRepository.SetCategoryAsync(tx.Id, category);
         tx.Category = category;
 
-        // Refresh local suggestions so newly introduced categories appear
         var userId = await UserService.GetCurrentUserId();
         _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
 
         await OnCategoryChanged.InvokeAsync(tx);
+    }
+
+    private async Task OpenLinkDialogAsync(Transaction tx)
+    {
+        var userId = await UserService.GetCurrentUserId();
+        var candidates = (await TransactionRepository.FindTransferCandidatesAsync(
+            userId, tx.Id, tx.Amount, tx.TransactionDate)).ToList();
+
+        var parameters = new DialogParameters<LinkTransferDialog>
+        {
+            { x => x.Candidates, candidates }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<LinkTransferDialog>("Link internal transfer", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: Guid partnerId })
+        {
+            await TransactionRepository.LinkTransactionsAsync(tx.Id, partnerId);
+            tx.LinkedTransactionId = partnerId;
+            _transferCandidateIds.Remove(tx.Id);
+
+            var partner = Transactions.FirstOrDefault(t => t.Id == partnerId);
+            if (partner is not null)
+            {
+                partner.LinkedTransactionId = tx.Id;
+                _transferCandidateIds.Remove(partnerId);
+            }
+
+            await OnTransferLinkChanged.InvokeAsync();
+        }
+    }
+
+    private async Task UnlinkAsync(Transaction tx)
+    {
+        await TransactionRepository.UnlinkTransactionAsync(tx.Id);
+
+        var partnerId = tx.LinkedTransactionId;
+        tx.LinkedTransactionId = null;
+
+        if (partnerId.HasValue)
+        {
+            var partner = Transactions.FirstOrDefault(t => t.Id == partnerId.Value);
+            if (partner is not null)
+                partner.LinkedTransactionId = null;
+        }
+
+        // Re-evaluate candidate visibility after unlinking
+        await RefreshCandidateIdsAsync();
+        await OnTransferLinkChanged.InvokeAsync();
     }
 
     // ── Nested types ─────────────────────────────────────────────────────────
