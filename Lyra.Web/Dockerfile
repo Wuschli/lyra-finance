@@ -17,9 +17,11 @@ USER $APP_UID
 WORKDIR /app
 EXPOSE 8080
 
-
 # This stage is used to build the service project
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["Lyra.Web/Lyra.Web.csproj", "Lyra.Web/"]
