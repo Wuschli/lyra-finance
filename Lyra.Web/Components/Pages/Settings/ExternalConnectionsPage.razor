@@ -1,4 +1,4 @@
-@page "/settings/connections"
+ï»¿@page "/settings/connections"
 @attribute [Authorize]
 @using Lyra.Core.Models
 @using Lyra.Core.Services
@@ -147,7 +147,7 @@ else
                                 }
                             </MudTd>
                             <MudTd>
-                                <MudText Typo="Typo.body2">@(context.Iban ?? "—")</MudText>
+                                <MudText Typo="Typo.body2">@(context.Iban ?? "ï¿½")</MudText>
                             </MudTd>
                             <MudTd>
                                 <MudText Typo="Typo.body2">@context.Currency</MudText>
@@ -163,7 +163,7 @@ else
                                 }
                                 else
                                 {
-                                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">ï¿½</MudText>
                                 }
                             </MudTd>
                             <MudTd>
@@ -330,7 +330,7 @@ else
             { x => x.BalanceType, conn.BalanceType },
             { x => x.AvailableBalanceTypes, conn.AvailableBalanceTypes }
         };
-        var dialog = await DialogService.ShowAsync<ConnectionSettingsDialog>($"Settings – {conn.ConnectionName}", parameters);
+        var dialog = await DialogService.ShowAsync<ConnectionSettingsDialog>($"Settings ï¿½ {conn.ConnectionName}", parameters);
         await dialog.Result;
     }
 
@@ -367,7 +367,7 @@ else
             { x => x.ConnectionId, connectionId }
         };
         var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
-        await DialogService.ShowAsync<SyncLogDialog>($"Sync Logs – {connectionName}", parameters, options);
+        await DialogService.ShowAsync<SyncLogDialog>($"Sync Logs ï¿½ {connectionName}", parameters, options);
     }
 
     private async Task AddBankAsync()

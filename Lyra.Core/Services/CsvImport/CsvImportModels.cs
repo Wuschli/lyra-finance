@@ -1,4 +1,4 @@
-namespace Lyra.Core.Services.CsvImport;
+ï»¿namespace Lyra.Core.Services.CsvImport;
 
 /// <summary>
 /// The DB target fields a CSV column can be mapped to.
@@ -18,7 +18,7 @@ public enum CsvTargetField
 }
 
 /// <summary>
-/// A single parsed row from the raw CSV — every cell is kept as a string.
+/// A single parsed row from the raw CSV ï¿½ every cell is kept as a string.
 /// </summary>
 public record CsvRawRow(IReadOnlyDictionary<string, string> Cells);
 

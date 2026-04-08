@@ -1,4 +1,4 @@
-using ApexCharts;
+﻿using ApexCharts;
 using DbUp;
 using Lyra.Core;
 using Lyra.Core.Auth;

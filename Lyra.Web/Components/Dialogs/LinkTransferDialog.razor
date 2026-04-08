@@ -1,4 +1,4 @@
-@using Lyra.Core.Models
+ï»¿@using Lyra.Core.Models
 @using MudBlazor
 
 <MudDialog>
@@ -10,7 +10,7 @@
         @if (Candidates.Count == 0)
         {
             <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-                No matching transactions found within ±5 days with the opposite amount on another account.
+                No matching transactions found within ï¿½5 days with the opposite amount on another account.
             </MudAlert>
         }
         else
@@ -32,7 +32,7 @@
                             }
                             <MudText Typo="Typo.body2"
                                      Color="@(candidate.Amount >= 0 ? Color.Success : Color.Error)">
-                                <strong>@candidate.Amount.ToString("N2") €</strong>
+                                <strong>@candidate.Amount.ToString("N2") ï¿½</strong>
                             </MudText>
                         </MudStack>
                     </MudRadio>

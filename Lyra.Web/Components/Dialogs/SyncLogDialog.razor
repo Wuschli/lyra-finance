@@ -1,4 +1,4 @@
-@using Lyra.Core.Models
+ï»¿@using Lyra.Core.Models
 @using Lyra.Core.Services
 @using MudBlazor
 @inject EnableBankingService EnableBankingService
@@ -103,7 +103,7 @@
     private static string FormatLogLabel(SyncLog log)
     {
         var time = log.SyncEnd?.ToString("g") ?? log.SyncStart.ToString("g");
-        return $"{time} — {log.Status}";
+        return $"{time} ï¿½ {log.Status}";
     }
 
     private static string FormatDuration(DateTimeOffset start, DateTimeOffset end)

@@ -1,4 +1,4 @@
-namespace Lyra.Core.Models;
+﻿namespace Lyra.Core.Models;
 
 public class SyncResult
 {
