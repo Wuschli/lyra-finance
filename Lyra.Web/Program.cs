@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Kiota.Abstractions.Authentication;
 using Microsoft.Kiota.Http.HttpClientLibrary;
 using MudBlazor.Services;
@@ -23,6 +24,16 @@ public class Program
         var builder = WebApplication.CreateBuilder(args);
         if (!DoMigration(builder))
             return;
+
+        if (builder.Configuration.GetValue<bool>("ReverseProxy:Enabled"))
+        {
+            builder.Services.Configure<ForwardedHeadersOptions>(options =>
+            {
+                options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+                options.KnownNetworks.Clear();
+                options.KnownProxies.Clear();
+            });
+        }
 
         builder.Services.AddDataProtection()
             .PersistKeysToFileSystem(new DirectoryInfo("/var/lib/lyra/keys"))
@@ -99,6 +110,10 @@ public class Program
         builder.Services.AddControllers();
 
         var app = builder.Build();
+
+        // Must be before UseAuthentication and UseAuthorization
+        if (builder.Configuration.GetValue<bool>("ReverseProxy:Enabled"))
+            app.UseForwardedHeaders();
 
         // Configure Dapper
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;

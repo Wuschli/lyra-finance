@@ -7,6 +7,7 @@ using Lyra.Core.EnableBanking;
 using Lyra.Core.EnableBanking.Models;
 using Lyra.Core.Extensions;
 using Lyra.Core.Models;
+using Microsoft.Extensions.Configuration;
 
 namespace Lyra.Core.Services;
 
@@ -16,15 +17,18 @@ public class EnableBankingService
     private readonly IDbConnectionFactory _connectionFactory;
     private readonly UserService _userService;
     private readonly AccountNotificationService _accountNotificationService;
+    private readonly string _baseUrl;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
 
-    public EnableBankingService(ApiClient client, IDbConnectionFactory connectionFactory, UserService userService, AccountNotificationService accountNotificationService)
+    public EnableBankingService(ApiClient client, IDbConnectionFactory connectionFactory, UserService userService, AccountNotificationService accountNotificationService, IConfiguration configuration)
     {
         _client = client;
         _connectionFactory = connectionFactory;
         _userService = userService;
         _accountNotificationService = accountNotificationService;
+        _baseUrl = configuration["BaseUrl"]
+                   ?? throw new InvalidOperationException("BaseUrl is not configured.");
     }
 
 
@@ -62,7 +66,7 @@ public class EnableBankingService
             Access = new Access { ValidUntil = DateTimeOffset.Now.AddDays(90) },
             Aspsp = aspsp,
             State = externalConnectionId.ToString(),
-            RedirectUrl = "https://localhost:7001/enable_banking/callback", // TODO base url from config
+            RedirectUrl = $"{_baseUrl}/enable_banking/callback",
             PsuType = PSUType.Personal
         };
 
