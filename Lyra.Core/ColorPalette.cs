@@ -1,4 +1,4 @@
-﻿namespace Lyra.Core;
+namespace Lyra.Core;
 
 public static class ColorPalette
 {

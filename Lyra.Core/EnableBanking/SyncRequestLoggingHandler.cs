@@ -1,4 +1,4 @@
-﻿namespace Lyra.Core.EnableBanking;
+namespace Lyra.Core.EnableBanking;
 
 /// <summary>
 /// A <see cref="DelegatingHandler"/> that logs all outgoing HTTP requests and incoming responses

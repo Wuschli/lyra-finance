@@ -1,4 +1,4 @@
-﻿using Lyra.Core.Services;
+using Lyra.Core.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Mvc;

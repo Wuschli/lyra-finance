@@ -1,4 +1,4 @@
-﻿namespace Lyra.Core.Services;
+namespace Lyra.Core.Services;
 
 public class TransactionCategoryService
 {

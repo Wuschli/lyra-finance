@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Lyra.Core.Extensions;
 using Microsoft.AspNetCore.Components.Authorization;
 

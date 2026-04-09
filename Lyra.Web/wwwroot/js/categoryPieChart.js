@@ -1,4 +1,4 @@
-﻿window.categoryPieChart = (() => {
+window.categoryPieChart = (() => {
     const charts = {};
 
     const INACTIVE_COLOR = '#FCFCFC';

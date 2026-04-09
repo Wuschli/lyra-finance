@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Lyra.Core.Models;
 
 namespace Lyra.Core;

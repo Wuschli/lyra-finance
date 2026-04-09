@@ -1,4 +1,4 @@
-﻿namespace Lyra.Core.Services.CsvImport;
+namespace Lyra.Core.Services.CsvImport;
 
 /// <summary>
 /// The DB target fields a CSV column can be mapped to.
