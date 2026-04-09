@@ -1,4 +1,4 @@
-﻿@using Lyra.Core.Models
+@using Lyra.Core.Models
 @using Lyra.Core.Services
 @using MudBlazor
 @using Lyra.Web.Components.Dialogs
@@ -44,7 +44,7 @@
                         <MudText Typo="Typo.caption"
                                  Color="@(account.CurrentBalance >= 0 ? Color.Success : Color.Error)"
                                  Class="nav-account-balance">
-                            @account.CurrentBalance.Value.ToString("N2") �
+                            @account.CurrentBalance.Value.ToString("N2") €
                         </MudText>
                     }
                 </MudStack>

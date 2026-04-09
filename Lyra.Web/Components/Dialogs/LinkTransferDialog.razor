@@ -1,4 +1,4 @@
-﻿@using Lyra.Core.Models
+@using Lyra.Core.Models
 @using MudBlazor
 
 <MudDialog>
@@ -32,7 +32,7 @@
                             }
                             <MudText Typo="Typo.body2"
                                      Color="@(candidate.Amount >= 0 ? Color.Success : Color.Error)">
-                                <strong>@candidate.Amount.ToString("N2") �</strong>
+                                <strong>@candidate.Amount.ToString("N2") €</strong>
                             </MudText>
                         </MudStack>
                     </MudRadio>
