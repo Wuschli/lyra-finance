@@ -65,8 +65,11 @@
     }
 
     /// <summary>
-    /// Reconstructs the per-day closing balance for the last <paramref name="days"/> days
-    /// by walking backwards from the known current balance and subtracting transactions.
+    /// Reconstructs the per-day closing balance by walking backwards from the known
+    /// current balance. The window spans from <paramref name="days"/> days ago up to
+    /// the latest booked future transaction (if any). <c>CurrentBalance</c> is always
+    /// the fixed anchor at the right end of the graph; future transactions are subtracted
+    /// backwards just like past ones.
     /// Pending transactions are excluded.
     /// </summary>
     private static List<BalancePoint> BuildBalanceHistory(
@@ -80,17 +83,28 @@
         var today = DateTimeOffset.UtcNow.Date;
         var startDate = today.AddDays(-(days - 1));
 
+        // Extend the window to the latest future booked transaction date
+        var maxFutureDate = transactions
+            .Where(t => !t.IsPending)
+            .Select(t => t.TransactionDate.LocalDateTime.Date)
+            .Where(d => d > today)
+            .DefaultIfEmpty(today)
+            .Max();
+
         var dailyDeltas = transactions
             .Where(t => !t.IsPending && t.TransactionDate.LocalDateTime.Date >= startDate)
             .GroupBy(t => t.TransactionDate.LocalDateTime.Date)
             .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
 
-        var points = new List<BalancePoint>(days);
+        // Walk backwards from maxFutureDate all the way to startDate.
+        // CurrentBalance is the anchor at maxFutureDate (the rightmost point).
+        var totalDays = (maxFutureDate - startDate).Days;
+        var points = new List<BalancePoint>(totalDays + 1);
         var balance = currentBalance.Value;
 
-        for (var i = 0; i < days; i++)
+        for (var i = 0; i <= totalDays; i++)
         {
-            var date = today.AddDays(-i);
+            var date = maxFutureDate.AddDays(-i);
             points.Add(new BalancePoint(new DateTimeOffset(date, TimeSpan.Zero), balance));
 
             if (dailyDeltas.TryGetValue(date, out var delta))
