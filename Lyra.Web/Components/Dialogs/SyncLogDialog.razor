@@ -103,7 +103,7 @@
     private static string FormatLogLabel(SyncLog log)
     {
         var time = log.SyncEnd?.ToString("g") ?? log.SyncStart.ToString("g");
-        return $"{time} � {log.Status}";
+        return $"{time} - {log.Status}";
     }
 
     private static string FormatDuration(DateTimeOffset start, DateTimeOffset end)

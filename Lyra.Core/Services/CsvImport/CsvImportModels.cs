@@ -18,7 +18,7 @@ public enum CsvTargetField
 }
 
 /// <summary>
-/// A single parsed row from the raw CSV � every cell is kept as a string.
+/// A single parsed row from the raw CSV. Every cell is kept as a string.
 /// </summary>
 public record CsvRawRow(IReadOnlyDictionary<string, string> Cells);
 

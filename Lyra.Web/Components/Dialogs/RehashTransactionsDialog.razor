@@ -56,10 +56,10 @@
                                     <MudText Typo="Typo.body2">@context.TransactionDate.ToString("dd.MM.yyyy")</MudText>
                                 </MudTd>
                                 <MudTd>
-                                    <MudText Typo="Typo.body2">@(context.BookingDate?.ToString("dd.MM.yyyy") ?? "�")</MudText>
+                                    <MudText Typo="Typo.body2">@(context.BookingDate?.ToString("dd.MM.yyyy") ?? "-")</MudText>
                                 </MudTd>
                                 <MudTd>
-                                    <MudText Typo="Typo.body2">@(context.Description ?? "�")</MudText>
+                                    <MudText Typo="Typo.body2">@(context.Description ?? "-")</MudText>
                                 </MudTd>
                                 <MudTd>
                                     <MudText Typo="Typo.body2">@context.CounterpartyName</MudText>
@@ -124,7 +124,7 @@
     private bool _changed;
     private bool _autoResolving;
     private bool _disposed;
-    private string _loadingMessage = "Scanning transactions and computing new hashes�";
+    private string _loadingMessage = "Scanning transactions and computing new hashes...";
     private List<DuplicateTransactionGroup> _duplicateGroups = new();
     private HashSet<Guid> _deleting = new();
     private readonly CancellationTokenSource _cts = new();
@@ -147,7 +147,7 @@
 
         _loading = true;
         _errorMessage = null;
-        _loadingMessage = "Scanning transactions and computing new hashes�";
+        _loadingMessage = "Scanning transactions and computing new hashes...";
         _duplicateGroups = new();
         SafeStateHasChanged();
 
@@ -192,7 +192,7 @@
         }
         catch (Exception)
         {
-            // Disposed or cancelled � silent abort.
+            // Disposed or cancelled. Silent abort.
         }
         finally
         {
@@ -210,7 +210,7 @@
 
         _loading = true;
         _errorMessage = null;
-        _loadingMessage = "Recomputing transaction hashes�";
+        _loadingMessage = "Recomputing transaction hashes...";
         SafeStateHasChanged();
 
         try
@@ -225,7 +225,7 @@
             if (_disposed || _cts.IsCancellationRequested) return;
 
             _changed = totalUpdated > 0;
-            _loadingMessage = $"Rehashed {totalUpdated} transaction(s). Rescanning�";
+            _loadingMessage = $"Rehashed {totalUpdated} transaction(s). Rescanning...";
             SafeStateHasChanged();
 
             await ScanAsync();
@@ -238,7 +238,7 @@
         }
         catch (Exception)
         {
-            // Disposed or cancelled � silent abort.
+            // Disposed or cancelled. Silent abort.
         }
     }
 
