@@ -50,7 +50,7 @@ else
 
         _accounts = (await AccountService.GetAccountsForCurrentUserAsync()).ToList();
 
-        var to = DateTimeOffset.UtcNow.Date.AddDays(1);
+        var to = DateTimeOffset.MaxValue;
         var from = to.AddYears(-1); // last 12 months; adjust as needed
 
         _transactions = (await TransactionRepository.GetTransactionsByUserAsync(userId, from, to)).ToList();
