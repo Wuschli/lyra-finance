@@ -49,6 +49,8 @@
         var history = BuildBalanceHistory(Transactions, CurrentBalance, Days);
         if (history.Count > 1)
             await RenderChart(history);
+        else
+            await JS.InvokeVoidAsync("balanceChart.destroy", _canvasId);
     }
 
     private async Task RenderChart(List<BalancePoint> history)
@@ -71,17 +73,28 @@
     /// the fixed anchor at the right end of the graph; future transactions are subtracted
     /// backwards just like past ones.
     /// Pending transactions are excluded.
+    /// If no transactions are present but a current balance is known, a flat line
+    /// at that balance is rendered across the full window.
     /// </summary>
     private static List<BalancePoint> BuildBalanceHistory(
         IReadOnlyList<Transaction> transactions,
         decimal? currentBalance,
         int days)
     {
-        if (currentBalance is null || transactions.Count == 0)
+        if (currentBalance is null)
             return [];
 
         var today = DateTimeOffset.UtcNow.Date;
         var startDate = today.AddDays(-(days - 1));
+
+        if (transactions.Count == 0)
+        {
+            return
+            [
+                new BalancePoint(new DateTimeOffset(startDate, TimeSpan.Zero), currentBalance.Value),
+                new BalancePoint(new DateTimeOffset(today, TimeSpan.Zero), currentBalance.Value),
+            ];
+        }
 
         // Extend the window to the latest future booked transaction date
         var maxFutureDate = transactions
