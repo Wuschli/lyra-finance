@@ -654,6 +654,47 @@ public class EnableBankingService
             return;
         }
 
+        // Before upserting, remove stale pending rows that have now settled.
+        // A pending row is considered stale when a booked transaction arrives with
+        // the same amount, currency and a transaction_date within 2 days.
+        const string deleteStalePendingSql = @"
+            DELETE FROM lyra.transactions
+            WHERE account_id = @AccountId
+              AND is_pending = true
+              AND amount = @Amount
+              AND currency = @Currency
+              AND ABS(EXTRACT(EPOCH FROM (transaction_date - @TransactionDate))) < 172800;";
+
+        foreach (var transaction in transactionList.Where(t => t.Status == TransactionStatus.BOOK))
+        {
+            var isPending = false;
+            var transactionDate = transaction.TransactionDate.ToDateTimeOrNull()
+                                  ?? transaction.BookingDate.ToDateTimeOrNull()
+                                  ?? DateTime.Now;
+            var currency = transaction.TransactionAmount?.Currency ?? string.Empty;
+
+            if (!decimal.TryParse(transaction.TransactionAmount?.Amount ?? string.Empty,
+                    System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var amount))
+                continue;
+
+            var counterpartyIban = transaction.CreditorAccount?.Iban ?? string.Empty;
+            if (counterpartyIban != iban)
+                amount = -amount;
+
+            var deleted = await connection.ExecuteAsync(deleteStalePendingSql, new
+            {
+                AccountId = accountId,
+                Amount = amount,
+                Currency = currency,
+                TransactionDate = transactionDate
+            });
+
+            if (deleted > 0)
+                logBuilder.AppendLine($"Account {accountId}: Removed {deleted} stale pending row(s) superseded by booked transaction.");
+        }
+
         const string sql = @"
             INSERT INTO lyra.transactions
                 (account_id, counterparty_name, counterparty_iban, description, amount, currency, transaction_date, booking_date, value_date, external_identifier, is_pending)
