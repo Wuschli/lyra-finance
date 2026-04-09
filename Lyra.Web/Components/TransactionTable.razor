@@ -8,205 +8,215 @@
 @inject IDialogService DialogService
 
 <style>
-    table {
+    /* ── Table layout ── */
+    .transaction-table table {
         table-layout: fixed;
         width: 100%;
     }
 
-    .cell-clip {
+    .transaction-table .cell-clip {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
-    .cell-right  { text-align: right; }
-    .cell-center { text-align: center; }
+    .transaction-table .cell-right {
+        text-align: right;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .transaction-table .cell-center {
+        text-align: center;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
 </style>
 
-@* ── Toolbar ── *@
-<MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+@* Wurzelelement als Anker für ::deep *@
+<div class="transaction-table">
+    @* ── Toolbar ── *@
+    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
 
-    <MudDateRangePicker @bind-DateRange="_dateRange"
-                        Label="Date range"
-                        Variant="Variant.Outlined"
-                        Margin="Margin.Dense"
-                        Clearable="true"
-                        DateFormat="dd.MM.yy"
-                        PickerVariant="PickerVariant.Dialog"
-                        RelativeWidth="DropdownWidth.Adaptive"/>
+        <MudTextField @bind-Value="_search"
+                      Placeholder="Search counterparty, IBAN, description…"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Clearable="true"
+                      Immediate="true"
+                      DebounceInterval="150"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense" />
 
-    @if (ShowAccountColumn)
-    {
-        <MudSelect T="Guid?"
-                   @bind-Value="_accountFilter"
-                   Label="Account"
+        <MudDateRangePicker @bind-DateRange="_dateRange"
+                            Label="Date range"
+                            Variant="Variant.Outlined"
+                            Margin="Margin.Dense"
+                            Clearable="true"
+                            DateFormat="dd.MM.yy"
+                            PickerVariant="PickerVariant.Dialog"
+                            RelativeWidth="DropdownWidth.Adaptive" />
+
+        @if (ShowAccountColumn)
+        {
+            <MudSelect T="Guid?"
+                       @bind-Value="_accountFilter"
+                       Label="Account"
+                       Variant="Variant.Outlined"
+                       Margin="Margin.Dense"
+                       Clearable="true">
+                @foreach (var a in Accounts)
+                {
+                    <MudSelectItem Value="@((Guid?)a.Id)">@a.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+
+        <MudSelect T="string"
+                   @bind-SelectedValues="_categoryFilter"
+                   Label="Category"
+                   MultiSelection="true"
                    Variant="Variant.Outlined"
                    Margin="Margin.Dense"
                    Clearable="true"
-                   Style="min-width: 160px;">
-            @foreach (var a in Accounts)
+                   MultiSelectionTextFunc="@(selected => selected.Count == 0 ? string.Empty : $"{selected.Count} selected")">
+            <MudSelectItem Value="@((string)_uncategorizedKey)">Uncategorized</MudSelectItem>
+            @foreach (var cat in _allCategories)
             {
-                <MudSelectItem Value="@((Guid?)a.Id)">@a.Name</MudSelectItem>
+                <MudSelectItem Value="@cat">@cat</MudSelectItem>
             }
         </MudSelect>
-    }
 
-    <MudTextField @bind-Value="_search"
-                  Placeholder="Search counterparty, IBAN, description…"
-                  Adornment="Adornment.Start"
-                  AdornmentIcon="@Icons.Material.Filled.Search"
-                  Clearable="true"
-                  Immediate="true"
-                  DebounceInterval="150"
-                  Variant="Variant.Outlined"
-                  Margin="Margin.Dense"/>
+        <MudSelect T="AmountFilter"
+                   @bind-Value="_amountFilter"
+                   Label="Direction"
+                   Variant="Variant.Outlined"
+                   Margin="Margin.Dense">
+            <MudSelectItem Value="AmountFilter.All">All</MudSelectItem>
+            <MudSelectItem Value="AmountFilter.Expenses">Expenses</MudSelectItem>
+            <MudSelectItem Value="AmountFilter.Income">Income</MudSelectItem>
+        </MudSelect>
 
-    <MudSelect T="string"
-               @bind-SelectedValues="_categoryFilter"
-               Label="Category"
-               MultiSelection="true"
-               Variant="Variant.Outlined"
-               Margin="Margin.Dense"
-               Clearable="true"
-               Style="width: 250px;"
-               MultiSelectionTextFunc="@(selected => selected.Count == 0 ? string.Empty : $"{selected.Count} selected")">
-        <MudSelectItem Value="@((string)_uncategorizedKey)">Uncategorized</MudSelectItem>
-        @foreach (var cat in _allCategories)
-        {
-            <MudSelectItem Value="@cat">@cat</MudSelectItem>
-        }
-    </MudSelect>
+    </MudStack>
 
-    <MudSelect T="AmountFilter"
-               @bind-Value="_amountFilter"
-               Label="Direction"
-               Variant="Variant.Outlined"
-               Margin="Margin.Dense"
-               Style="width: 140px;">
-        <MudSelectItem Value="AmountFilter.All">All</MudSelectItem>
-        <MudSelectItem Value="AmountFilter.Expenses">Expenses</MudSelectItem>
-        <MudSelectItem Value="AmountFilter.Income">Income</MudSelectItem>
-    </MudSelect>
-
-</MudStack>
-
-@* ── Table ── *@
-<MudTable T="Transaction"
-          Items="Transactions"
-          Filter="_filterFunc"
-          HorizontalScrollbar="false"
-          Hover="true"
-          Striped="true"
-          Dense="true"
-          Elevation="0">
-    <ColGroup>
-        <col style="width: 100px;"/>
-        @if (ShowAccountColumn)
-        {
+    @* ── Table ── *@
+    <MudTable T="Transaction"
+              Items="Transactions"
+              Filter="_filterFunc"
+              HorizontalScrollbar="false"
+              Hover="true"
+              Striped="true"
+              Dense="true"
+              Elevation="0">
+        <ColGroup>
             <col style="width: 100px;"/>
-        }
-        <col style="width: 18%;"/>
-        <col/>
-        <col style="width: 250px;"/>
-        <col style="width: 115px;"/>
-        <col style="width: 44px;"/>
-    </ColGroup>
-    <HeaderContent>
-        <MudTh Class="cell-center">Date</MudTh>
-        @if (ShowAccountColumn)
-        {
-            <MudTh Class="cell-center">Account</MudTh>
-        }
-        <MudTh Class="cell-center">Counterparty</MudTh>
-        <MudTh Class="cell-center">Description</MudTh>
-        <MudTh Class="cell-center">Category</MudTh>
-        <MudTh Class="cell-center">Amount</MudTh>
-        <MudTh/>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Date" Class="cell-clip">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                <MudText Typo="Typo.body2" Color="Color.Default">
-                    @context.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
-                </MudText>
-            </MudStack>
-        </MudTd>
-        @if (ShowAccountColumn)
-        {
-            <MudTd DataLabel="Account" Class="cell-clip">
-                <MudText Typo="Typo.body2" Color="Color.Default">
-                    @AccountName(context.AccountId)
-                </MudText>
-            </MudTd>
-        }
-        <MudTd DataLabel="Counterparty" Class="cell-clip">
-            <MudText Typo="Typo.body2" Color="Color.Default">
-                <strong>@context.CounterpartyName</strong>
-            </MudText>
-            @if (!string.IsNullOrWhiteSpace(context.CounterpartyIban))
+            @if (ShowAccountColumn)
             {
-                <MudText Typo="Typo.caption" Color="Color.Default">@context.CounterpartyIban</MudText>
+                <col style="width: 100px;"/>
             }
-        </MudTd>
-        <MudTd DataLabel="Description" Class="cell-wrap">
-            <MudText Typo="Typo.body2" Color="Color.Default">@context.Description</MudText>
-        </MudTd>
-        <MudTd DataLabel="Category" Class="cell-center">
-            <CategoryInput Value="@context.Category"
-                           SearchFunc="SearchCategoriesAsync"
-                           OnCommit="@(cat => SetCategoryAsync(context, cat))"/>
-        </MudTd>
-        <MudTd DataLabel="Amount" Class="cell-clip cell-right">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.FlexEnd" Spacing="1">
-                @if (context.IsPending)
+            <col style="width: 18%;"/>
+            <col/>
+            <col style="width: 250px;"/>
+            <col style="width: 115px;"/>
+            <col style="width: 44px;"/>
+        </ColGroup>
+        <HeaderContent>
+            <MudTh Class="cell-center">Date</MudTh>
+            @if (ShowAccountColumn)
+            {
+                <MudTh Class="cell-center">Account</MudTh>
+            }
+            <MudTh Class="cell-center">Counterparty</MudTh>
+            <MudTh Class="cell-center">Description</MudTh>
+            <MudTh Class="cell-center">Category</MudTh>
+            <MudTh Class="cell-center">Amount</MudTh>
+            <MudTh/>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Date" Class="cell-clip">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudText Typo="Typo.body2" Color="Color.Default">
+                        @context.TransactionDate.ToLocalTime().ToString("dd.MM.yyyy")
+                    </MudText>
+                </MudStack>
+            </MudTd>
+            @if (ShowAccountColumn)
+            {
+                <MudTd DataLabel="Account" Class="cell-clip">
+                    <MudText Typo="Typo.body2" Color="Color.Default">
+                        @AccountName(context.AccountId)
+                    </MudText>
+                </MudTd>
+            }
+            <MudTd DataLabel="Counterparty" Class="cell-clip">
+                <MudText Typo="Typo.body2" Color="Color.Default">
+                    <strong>@context.CounterpartyName</strong>
+                </MudText>
+                @if (!string.IsNullOrWhiteSpace(context.CounterpartyIban))
                 {
-                    <MudTooltip Text="Pending">
-                        <MudIcon Icon="@Icons.Material.Outlined.Schedule"
-                                 Size="Size.Small"
-                                 Color="Color.Warning"/>
-                    </MudTooltip>
+                    <MudText Typo="Typo.caption" Color="Color.Default">@context.CounterpartyIban</MudText>
                 }
+            </MudTd>
+            <MudTd DataLabel="Description" Class="cell-wrap">
+                <MudText Typo="Typo.body2" Color="Color.Default">@context.Description</MudText>
+            </MudTd>
+            <MudTd DataLabel="Category" Class="cell-center">
+                <CategoryInput Value="@context.Category"
+                               SearchFunc="SearchCategoriesAsync"
+                               OnCommit="@(cat => SetCategoryAsync(context, cat))"/>
+            </MudTd>
+            <MudTd DataLabel="Amount" Class="cell-clip cell-right">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.FlexEnd" Spacing="1">
+                    @if (context.IsPending)
+                    {
+                        <MudTooltip Text="Pending">
+                            <MudIcon Icon="@Icons.Material.Outlined.Schedule"
+                                     Size="Size.Small"
+                                     Color="Color.Warning"/>
+                        </MudTooltip>
+                    }
+                    @if (context.LinkedTransactionId.HasValue)
+                    {
+                        <MudTooltip Text="Internal transfer">
+                            <MudIcon Icon="@Icons.Material.Filled.SwapHoriz"
+                                     Size="Size.Small"
+                                     Color="Color.Info"/>
+                        </MudTooltip>
+                    }
+                    <MudText Typo="Typo.body2"
+                             Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
+                        <strong>@context.Amount.ToString("N2") €</strong>
+                    </MudText>
+                </MudStack>
+            </MudTd>
+            <MudTd Class="cell-actions">
                 @if (context.LinkedTransactionId.HasValue)
                 {
-                    <MudTooltip Text="Internal transfer">
-                        <MudIcon Icon="@Icons.Material.Filled.SwapHoriz"
-                                 Size="Size.Small"
-                                 Color="Color.Info"/>
+                    <MudTooltip Text="Remove transfer link">
+                        <MudIconButton Icon="@Icons.Material.Filled.LinkOff"
+                                       Size="Size.Small"
+                                       Color="Color.Default"
+                                       OnClick="@(() => UnlinkAsync(context))"/>
                     </MudTooltip>
                 }
-                <MudText Typo="Typo.body2"
-                         Color="@(context.Amount >= 0 ? Color.Success : Color.Error)">
-                    <strong>@context.Amount.ToString("N2") €</strong>
-                </MudText>
-            </MudStack>
-        </MudTd>
-        <MudTd Class="cell-center" Style="padding: 0;">
-            @if (context.LinkedTransactionId.HasValue)
-            {
-                <MudTooltip Text="Remove transfer link">
-                    <MudIconButton Icon="@Icons.Material.Filled.LinkOff"
-                                   Size="Size.Small"
-                                   Color="Color.Default"
-                                   OnClick="@(() => UnlinkAsync(context))"/>
-                </MudTooltip>
-            }
-            else if (context.Amount > 0 && _transferCandidateIds.Contains(context.Id))
-            {
-                <MudTooltip Text="Link as internal transfer">
-                    <MudIconButton Icon="@Icons.Material.Filled.Link"
-                                   Size="Size.Small"
-                                   Color="Color.Default"
-                                   OnClick="@(() => OpenLinkDialogAsync(context))"/>
-                </MudTooltip>
-            }
-        </MudTd>
-    </RowTemplate>
-    <NoRecordsContent>
-        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="my-2">
-            No transactions match the current filter.
-        </MudAlert>
-    </NoRecordsContent>
-</MudTable>
+                else if (context.Amount > 0 && _transferCandidateIds.Contains(context.Id))
+                {
+                    <MudTooltip Text="Link as internal transfer">
+                        <MudIconButton Icon="@Icons.Material.Filled.Link"
+                                       Size="Size.Small"
+                                       Color="Color.Default"
+                                       OnClick="@(() => OpenLinkDialogAsync(context))"/>
+                    </MudTooltip>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="my-2">
+                No transactions match the current filter.
+            </MudAlert>
+        </NoRecordsContent>
+    </MudTable>
+</div>
 
 @code {
 
