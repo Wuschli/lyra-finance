@@ -338,24 +338,34 @@ else
         _lastSyncLogs.Remove(connectionId);
         StateHasChanged();
 
-        var result = await EnableBankingService.SyncExternalConnection(connectionId);
-
-        _syncingConnections.Remove(connectionId);
-
-        if (result.RequiresReauthorization)
+        try
         {
-            NavigationManager.NavigateTo(result.ReauthorizationUrl!, forceLoad: true);
-            return;
+            var result = await EnableBankingService.SyncExternalConnection(connectionId);
+
+            _syncingConnections.Remove(connectionId);
+
+            if (result.RequiresReauthorization)
+            {
+                NavigationManager.NavigateTo(result.ReauthorizationUrl!, forceLoad: true);
+                return;
+            }
+
+            var lastLog = await EnableBankingService.GetLastSyncLogAsync(connectionId);
+            if (lastLog != null)
+                _lastSyncLogs[connectionId] = lastLog;
+
+            if (result.Status == SyncStatus.Success)
+                await LoadDataAsync();
+            else
+                StateHasChanged();
         }
-
-        var lastLog = await EnableBankingService.GetLastSyncLogAsync(connectionId);
-        if (lastLog != null)
-            _lastSyncLogs[connectionId] = lastLog;
-
-        if (result.Status == SyncStatus.Success)
-            await LoadDataAsync();
-        else
+        catch (Exception ex)
+        {
+            _syncingConnections.Remove(connectionId);
+            Error = "Sync failed";
+            ErrorDescription = ex.Message;
             StateHasChanged();
+        }
     }
 
     private async Task OpenSyncLogDialogAsync(Guid connectionId, string connectionName)

@@ -372,7 +372,18 @@ public class EnableBankingService
 
             if (string.IsNullOrEmpty(externalConnection.SessionId))
             {
-                var result = await ReauthorizeAsync(externalConnectionId);
+                AuthorizationResult result;
+                try
+                {
+                    result = await ReauthorizeAsync(externalConnectionId);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    logBuilder.AppendLine($"Re-authorization failed: {ex.Message}");
+                    status = SyncStatus.Failure;
+                    return SyncResult.Failure();
+                }
+
                 if (result.IsSuccess)
                 {
                     logBuilder.AppendLine($"No active session — re-authorization required. URL: {result.RedirectUrl}");
