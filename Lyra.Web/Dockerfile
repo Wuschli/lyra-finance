@@ -4,6 +4,10 @@
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 USER root
 
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
 # kerberos fix
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgssapi-krb5-2 \

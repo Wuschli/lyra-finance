@@ -1,4 +1,4 @@
-﻿using ApexCharts;
+using ApexCharts;
 using DbUp;
 using Lyra.Core;
 using Lyra.Core.Auth;
@@ -123,6 +123,12 @@ public class Program
         {
             app.UseExceptionHandler("/Error");
         }
+
+        app.Use(async (context, next) =>
+        {
+            context.Response.Headers.ContentType = "text/html; charset=utf-8";
+            await next();
+        });
 
         app.UseAuthentication();
         app.UseAuthorization();
