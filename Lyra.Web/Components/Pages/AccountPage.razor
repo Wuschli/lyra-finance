@@ -6,6 +6,8 @@
 @inject NavigationManager NavManager
 @attribute [Authorize]
 
+<AppPageTitle Title="@_account?.Name"/>
+
 @if (_account == null)
 {
     <MudProgressLinear Indeterminate="true" Color="Color.Primary"/>
