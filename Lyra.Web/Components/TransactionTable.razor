@@ -46,7 +46,7 @@
                       Immediate="true"
                       DebounceInterval="150"
                       Variant="Variant.Outlined"
-                      Margin="Margin.Dense" />
+                      Margin="Margin.Dense"/>
 
         <MudDateRangePicker @bind-DateRange="_dateRange"
                             Label="Date range"
@@ -55,7 +55,7 @@
                             Clearable="true"
                             DateFormat="dd.MM.yy"
                             PickerVariant="PickerVariant.Dialog"
-                            RelativeWidth="DropdownWidth.Adaptive" />
+                            RelativeWidth="DropdownWidth.Adaptive"/>
 
         @if (ShowAccountColumn)
         {
@@ -269,6 +269,7 @@
     private List<string> _allCategories = new();
 
     private bool _initialCategoryApplied;
+    private CancellationTokenSource? _paramsCts;
 
     /// <summary>
     /// IDs of unlinked income transactions that have at least one transfer candidate in the DB.
@@ -280,6 +281,13 @@
 
     protected override async Task OnParametersSetAsync()
     {
+    // Cancel any previous in-flight async work before starting fresh
+        _paramsCts?.Cancel();
+        _paramsCts?.Dispose();
+        _paramsCts = new CancellationTokenSource();
+
+        var token = _paramsCts.Token;
+
         if (AllCategories.Count > 0)
             _allCategories = AllCategories.ToList();
 
@@ -293,7 +301,7 @@
             _initialCategoryApplied = true;
         }
 
-        await RefreshCandidateIdsAsync();
+        await RefreshCandidateIdsAsync(token);
     }
 
     // ── Filter delegate ──────────────────────────────────────────────────────
@@ -311,7 +319,7 @@
         }
 
         if (_amountFilter == AmountFilter.Expenses && t.Amount >= 0) return false;
-        if (_amountFilter == AmountFilter.Income   && t.Amount <  0) return false;
+        if (_amountFilter == AmountFilter.Income && t.Amount < 0) return false;
 
         if (_accountFilter.HasValue && t.AccountId != _accountFilter.Value) return false;
 
@@ -354,16 +362,24 @@
         return Task.FromResult(results);
     }
 
-    private async Task RefreshCandidateIdsAsync()
+    private async Task RefreshCandidateIdsAsync(CancellationToken cancellationToken = default)
     {
         var userId = await UserService.GetCurrentUserId();
+
+        if (cancellationToken.IsCancellationRequested)
+            return;
 
         var incomeTransactions = Transactions
             .Where(t => t.Amount > 0 && t.LinkedTransactionId == null)
             .ToList();
 
-        _transferCandidateIds = await TransactionRepository.FindTransferCandidateSourceIdsAsync(
+        var candidateIds = await TransactionRepository.FindTransferCandidateSourceIdsAsync(
             userId, incomeTransactions);
+
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        _transferCandidateIds = candidateIds;
     }
 
     // ── Actions ──────────────────────────────────────────────────────────────
@@ -431,5 +447,11 @@
 
     // ── Nested types ─────────────────────────────────────────────────────────
 
-    private enum AmountFilter { All, Expenses, Income }
+    private enum AmountFilter
+    {
+        All,
+        Expenses,
+        Income
+    }
+
 }

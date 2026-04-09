@@ -50,10 +50,9 @@ else
                   CurrentBalance="Account.CurrentBalance"
                   Class="mb-2"/>
 
-    <TransactionTable
-        Transactions="_transactions"
-        AllCategories="_allCategories"
-        OnCategoryChanged="OnCategoryChanged"/>
+    <TransactionTable Transactions="_transactions"
+                      AllCategories="_allCategories"
+                      OnCategoryChanged="OnCategoryChanged"/>
 }
 
 @code {
@@ -66,6 +65,7 @@ else
 
     private List<Transaction>? _transactions;
     private List<string> _allCategories = new();
+    private CancellationTokenSource? _loadCts;
 
     protected override async Task OnInitializedAsync()
     {
@@ -74,7 +74,17 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        await LoadData();
+        // Cancel any previous in-flight load before starting a new one
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = new CancellationTokenSource();
+
+        // Reset immediately so chart and table show the loading state
+        // instead of stale data from the previous account
+        _transactions = null;
+        StateHasChanged();
+
+        await LoadData(_loadCts.Token);
     }
 
     private async Task OnAccountsChangedAsync()
@@ -87,11 +97,21 @@ else
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task LoadData()
+    private async Task LoadData(CancellationToken cancellationToken = default)
     {
         var userId = await UserService.GetCurrentUserId();
-        _transactions = (await TransactionRepository.GetTransactionsByAccountAsync(Account.Id)).ToList();
-        _allCategories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
+
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        var transactions = (await TransactionRepository.GetTransactionsByAccountAsync(Account.Id)).ToList();
+        var categories = (await TransactionRepository.GetDistinctCategoriesAsync(userId)).ToList();
+
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        _transactions = transactions;
+        _allCategories = categories;
     }
 
     private async Task OnCategoryChanged(Transaction tx)
@@ -117,5 +137,10 @@ else
     public async ValueTask DisposeAsync()
     {
         AccountNotificationService.OnAccountsChanged -= OnAccountsChangedAsync;
+
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
     }
+
 }

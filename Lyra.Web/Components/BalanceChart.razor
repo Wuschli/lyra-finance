@@ -31,12 +31,18 @@
 
     private readonly string _canvasId = $"balance-chart-{Guid.NewGuid():N}";
     private bool _needsRender;
+    private CancellationTokenSource? _renderCts;
 
     private record BalancePoint(DateTimeOffset Date, decimal Balance);
 
     protected override void OnParametersSet()
     {
         _needsRender = true;
+
+        // Cancel any in-flight render triggered by the previous parameter set
+        _renderCts?.Cancel();
+        _renderCts?.Dispose();
+        _renderCts = new CancellationTokenSource();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -46,14 +52,24 @@
 
         _needsRender = false;
 
+        var cts = _renderCts;
+        if (cts is null || cts.IsCancellationRequested)
+            return;
+
+        var token = cts.Token;
+
         var history = BuildBalanceHistory(Transactions, CurrentBalance, Days);
+
+        if (token.IsCancellationRequested)
+            return;
+
         if (history.Count > 1)
-            await RenderChart(history);
+            await RenderChart(history, token);
         else
-            await JS.InvokeVoidAsync("balanceChart.destroy", _canvasId);
+            await JS.InvokeVoidAsync("balanceChart.destroy", _canvasId, token);
     }
 
-    private async Task RenderChart(List<BalancePoint> history)
+    private async Task RenderChart(List<BalancePoint> history, CancellationToken cancellationToken)
     {
         var labels = history
             .Select(p => p.Date.LocalDateTime.ToString("dd.MM."))
@@ -63,7 +79,7 @@
             .Select(p => (double)p.Balance)
             .ToArray();
 
-        await JS.InvokeVoidAsync("balanceChart.render", _canvasId, labels, values);
+        await JS.InvokeVoidAsync("balanceChart.render", cancellationToken, _canvasId, labels, values);
     }
 
     /// <summary>
@@ -130,6 +146,10 @@
 
     public async ValueTask DisposeAsync()
     {
+        _renderCts?.Cancel();
+        _renderCts?.Dispose();
+        _renderCts = null;
+
         await JS.InvokeVoidAsync("balanceChart.destroy", _canvasId);
     }
 }
